@@ -10,7 +10,7 @@ export interface Transaction {
   date: string;
   description: string;
   amount: number;
-  category: CategoryType;
+  category?: CategoryType;  // undefined = sin categorizar
   subCategory: string;
   isInstallment: boolean;
   isIncome?: boolean;  // true = abono (income), false = cargo (expense)

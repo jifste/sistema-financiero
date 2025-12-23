@@ -10,6 +10,8 @@ export const calculateFinancialHealth = (transactions: Transaction[], monthlyInc
   };
 
   transactions.forEach(t => {
+    // Skip uncategorized transactions
+    if (!t.category) return;
     // We only consider the current month's impact or installment value
     const value = t.isInstallment ? (t.installmentValue || 0) : t.amount;
     totals[t.category] += value;
@@ -17,19 +19,19 @@ export const calculateFinancialHealth = (transactions: Transaction[], monthlyInc
 
   const needPct = (totals[CategoryType.NEED] / monthlyIncome) * 100;
   const wantPct = (totals[CategoryType.WANT] / monthlyIncome) * 100;
-  
+
   // Health score is a weighted average of how well you follow 50/30/20
   // Higher penalty for overspending on Needs and Wants
   const needDiff = Math.max(0, needPct - 50);
   const wantDiff = Math.max(0, wantPct - 30);
-  
+
   const score = Math.max(0, 100 - (needDiff * 2) - (wantDiff * 1.5));
   return { score, totals, needPct, wantPct };
 };
 
 export const detectSubscriptions = (transactions: Transaction[]): Subscription[] => {
   const groups: Record<string, { count: number; amount: number }> = {};
-  
+
   transactions.forEach(t => {
     const key = `${t.description.toLowerCase().trim()}_${t.amount}`;
     if (!groups[key]) {
@@ -54,10 +56,10 @@ export const getDebtTimeline = (transactions: Transaction[]): DebtSummary[] => {
     .map(t => {
       const remainingInstallments = (t.installmentTotal || 0) - (t.installmentCurrent || 0);
       const remainingBalance = remainingInstallments * (t.installmentValue || 0);
-      
+
       const now = new Date();
       const endDate = new Date(now.setMonth(now.getMonth() + remainingInstallments));
-      
+
       return {
         description: t.description,
         currentInstallment: t.installmentCurrent || 0,
@@ -82,7 +84,7 @@ export const getCashFlowProjection = (transactions: Transaction[], months: numbe
         monthlyTotal += (t.installmentValue || 0);
       }
     });
-    
+
     projection.push({
       month: MONTH_NAMES[(startMonth + i) % 12],
       amount: monthlyTotal

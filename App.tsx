@@ -60,7 +60,7 @@ const App: React.FC = () => {
     description: row.descripcion || row.description || row.Descripcion || row.concepto || row.Concepto || row.Movimientos || row.movimientos || 'Sin descripción',
     amount: Math.abs(parseFloat(String(row.monto || row.amount || row.Monto || row.valor || row.Valor || row.Cargos || row.cargos || row.Abonos || row.abonos || '0').replace(/[^0-9.-]/g, ''))),
     date: row.fecha || row.date || row.Fecha || new Date().toISOString(),
-    category: CategoryType.WANT,
+    category: undefined,  // Sin categorizar por defecto
     subCategory: row.categoria || row.category || row.Categoria || 'Otros',
     isInstallment: false
   });
@@ -161,7 +161,7 @@ const App: React.FC = () => {
           description: desc,
           amount: amount,
           date: dateStr || new Date().toISOString(),
-          category: CategoryType.WANT,
+          category: undefined,  // Sin categorizar
           subCategory: isIncome ? 'Ingreso' : 'Gasto',
           isInstallment: false,
           isIncome: isIncome
@@ -205,7 +205,7 @@ const App: React.FC = () => {
             description: line.substring(0, 50).replace(/[\d$,.-]/g, '').trim() || 'Transacción PDF',
             amount: Math.abs(amount),
             date: dates?.[0] || new Date().toISOString(),
-            category: CategoryType.WANT,
+            category: undefined,  // Sin categorizar
             subCategory: 'Importado PDF',
             isInstallment: false
           });
@@ -683,7 +683,7 @@ const App: React.FC = () => {
                   transactions
                     .filter(t => !t.isIncome)
                     .map(t => (
-                      <div key={t.id} className="grid grid-cols-12 gap-4 items-center p-4 border-b border-slate-50 hover:bg-slate-25">
+                      <div key={t.id} className={`grid grid-cols-12 gap-4 items-center p-4 border-b border-slate-50 ${!t.category ? 'bg-yellow-50' : 'hover:bg-slate-25'}`}>
                         <div className="col-span-1 text-xs text-slate-500">
                           {typeof t.date === 'string' && t.date.includes('-')
                             ? new Date(t.date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })
