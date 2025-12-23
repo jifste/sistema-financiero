@@ -350,6 +350,24 @@ const App: React.FC = () => {
     setCreditOperations(prev => prev.filter(c => c.id !== id));
   };
 
+  // Function to update paid installments and recalculate balance
+  const updateCreditInstallments = (id: string, change: number) => {
+    setCreditOperations(prev => prev.map(c => {
+      if (c.id !== id) return c;
+
+      const newPaid = Math.max(0, Math.min(c.totalInstallments, c.paidInstallments + change));
+      const newRemaining = c.totalInstallments - newPaid;
+      const newPending = c.monthlyInstallment * newRemaining;
+
+      return {
+        ...c,
+        paidInstallments: newPaid,
+        remainingInstallments: newRemaining,
+        pendingBalance: newPending
+      };
+    }));
+  };
+
   // Function to add a new subscription
   const addSubscription = () => {
     const amount = parseFloat(newSubscription.monthlyAmount) || 0;
@@ -1071,8 +1089,22 @@ const App: React.FC = () => {
                       <div className="text-right">
                         <span className="font-medium text-indigo-600">${c.monthlyInstallment.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
                       </div>
-                      <div className="text-center">
-                        <span className="text-green-600 font-medium">{c.paidInstallments}</span>
+                      <div className="text-center flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => updateCreditInstallments(c.id, -1)}
+                          disabled={c.paidInstallments <= 0}
+                          className="w-6 h-6 rounded-full bg-red-100 text-red-600 hover:bg-red-200 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all"
+                        >
+                          −
+                        </button>
+                        <span className="text-green-600 font-medium w-8">{c.paidInstallments}</span>
+                        <button
+                          onClick={() => updateCreditInstallments(c.id, 1)}
+                          disabled={c.paidInstallments >= c.totalInstallments}
+                          className="w-6 h-6 rounded-full bg-green-100 text-green-600 hover:bg-green-200 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold transition-all"
+                        >
+                          +
+                        </button>
                       </div>
                       <div className="text-center">
                         <span className="text-orange-600 font-medium">{c.remainingInstallments}</span>
