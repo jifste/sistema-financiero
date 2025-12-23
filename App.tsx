@@ -249,6 +249,13 @@ const App: React.FC = () => {
     }
   };
 
+  // Function to update a transaction's category
+  const updateTransactionCategory = (id: string, newCategory: CategoryType) => {
+    setTransactions(prev => prev.map(t =>
+      t.id === id ? { ...t, category: newCategory } : t
+    ));
+  };
+
   // Derived Financial Data
   // Calculate income (abonos) and expenses (cargos) from imported transactions
   const totalIncome = useMemo(() => {
@@ -305,7 +312,7 @@ const App: React.FC = () => {
         <nav className="space-y-2 flex-grow">
           {[
             { icon: LayoutDashboard, label: 'Resumen', tab: 'resumen' as TabType },
-            { icon: CreditCard, label: 'Mis Cuentas', tab: 'cuentas' as TabType },
+            { icon: CreditCard, label: 'Categorizar', tab: 'cuentas' as TabType },
             { icon: PieChartIcon, label: 'Presupuesto', tab: 'presupuesto' as TabType },
             { icon: Clock, label: 'Historial', tab: 'historial' as TabType },
           ].map((item) => (
@@ -602,46 +609,124 @@ const App: React.FC = () => {
 
         {activeTab === 'cuentas' && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-slate-900">Mis Cuentas</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white p-6 rounded-3xl shadow-lg">
-                <div className="flex justify-between items-start mb-8">
-                  <div>
-                    <p className="text-indigo-200 text-sm">Cuenta Principal</p>
-                    <p className="text-xs text-indigo-300 mt-1">**** **** **** 4532</p>
-                  </div>
-                  <Wallet size={32} className="text-indigo-200" />
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-slate-900">Categorizar Gastos</h2>
+              <div className="flex gap-4">
+                <div className="bg-blue-50 px-3 py-1.5 rounded-lg">
+                  <span className="text-xs text-blue-600">Necesidades: </span>
+                  <span className="font-bold text-blue-700">${health.totals[CategoryType.NEED].toLocaleString('es-CL')}</span>
                 </div>
-                <p className="text-indigo-200 text-sm mb-1">Balance Disponible</p>
-                <h3 className="text-3xl font-bold">${(INCOME - totalMonthlyExpenses).toLocaleString('es-CL')}</h3>
-              </div>
-              <div className="bg-gradient-to-br from-slate-700 to-slate-900 text-white p-6 rounded-3xl shadow-lg">
-                <div className="flex justify-between items-start mb-8">
-                  <div>
-                    <p className="text-slate-300 text-sm">Tarjeta de Crédito</p>
-                    <p className="text-xs text-slate-400 mt-1">**** **** **** 8891</p>
-                  </div>
-                  <CreditCard size={32} className="text-slate-300" />
+                <div className="bg-purple-50 px-3 py-1.5 rounded-lg">
+                  <span className="text-xs text-purple-600">Deseos: </span>
+                  <span className="font-bold text-purple-700">${health.totals[CategoryType.WANT].toLocaleString('es-CL')}</span>
                 </div>
-                <p className="text-slate-300 text-sm mb-1">Deuda Actual</p>
-                <h3 className="text-3xl font-bold">${totalDebtBalance.toLocaleString('es-CL')}</h3>
+                <div className="bg-green-50 px-3 py-1.5 rounded-lg">
+                  <span className="text-xs text-green-600">Ahorro: </span>
+                  <span className="font-bold text-green-700">${health.totals[CategoryType.SAVINGS].toLocaleString('es-CL')}</span>
+                </div>
               </div>
             </div>
-            <div className="bg-white rounded-3xl p-6 border border-slate-100">
-              <h3 className="font-bold text-lg text-slate-900 mb-4">Resumen de Cuentas</h3>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center p-4 bg-slate-50 rounded-xl">
-                  <span className="text-slate-600">Total Ingresos</span>
-                  <span className="font-bold text-green-600">${INCOME.toLocaleString('es-CL')}</span>
+
+            {/* Presupuesto disponible */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Necesidades (50%)</p>
+                  <p className="text-sm font-bold text-blue-600">${(totalIncome * 0.50).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</p>
+                  <p className={`text-xs mt-1 ${health.totals[CategoryType.NEED] <= totalIncome * 0.50 ? 'text-green-600' : 'text-red-600'}`}>
+                    {health.totals[CategoryType.NEED] <= totalIncome * 0.50 ?
+                      `Disponible: $${(totalIncome * 0.50 - health.totals[CategoryType.NEED]).toLocaleString('es-CL', { maximumFractionDigits: 0 })}` :
+                      `Excedido: $${(health.totals[CategoryType.NEED] - totalIncome * 0.50).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                    }
+                  </p>
                 </div>
-                <div className="flex justify-between items-center p-4 bg-slate-50 rounded-xl">
-                  <span className="text-slate-600">Total Gastos</span>
-                  <span className="font-bold text-red-600">${totalMonthlyExpenses.toLocaleString('es-CL')}</span>
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Deseos (30%)</p>
+                  <p className="text-sm font-bold text-purple-600">${(totalIncome * 0.30).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</p>
+                  <p className={`text-xs mt-1 ${health.totals[CategoryType.WANT] <= totalIncome * 0.30 ? 'text-green-600' : 'text-red-600'}`}>
+                    {health.totals[CategoryType.WANT] <= totalIncome * 0.30 ?
+                      `Disponible: $${(totalIncome * 0.30 - health.totals[CategoryType.WANT]).toLocaleString('es-CL', { maximumFractionDigits: 0 })}` :
+                      `Excedido: $${(health.totals[CategoryType.WANT] - totalIncome * 0.30).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                    }
+                  </p>
                 </div>
-                <div className="flex justify-between items-center p-4 bg-indigo-50 rounded-xl">
-                  <span className="text-indigo-700 font-medium">Balance Neto</span>
-                  <span className="font-bold text-indigo-600">${(INCOME - totalMonthlyExpenses).toLocaleString('es-CL')}</span>
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Ahorro (20%)</p>
+                  <p className="text-sm font-bold text-green-600">${(totalIncome * 0.20).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</p>
+                  <p className={`text-xs mt-1 ${health.totals[CategoryType.SAVINGS] >= totalIncome * 0.20 ? 'text-green-600' : 'text-orange-600'}`}>
+                    {health.totals[CategoryType.SAVINGS] >= totalIncome * 0.20 ?
+                      `✓ Meta alcanzada` :
+                      `Falta: $${(totalIncome * 0.20 - health.totals[CategoryType.SAVINGS]).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                    }
+                  </p>
                 </div>
+              </div>
+            </div>
+
+            {/* Tabla de gastos para categorizar */}
+            <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-slate-50">
+                <div className="grid grid-cols-12 gap-4 text-xs font-semibold text-slate-500 uppercase">
+                  <div className="col-span-1">Fecha</div>
+                  <div className="col-span-4">Concepto</div>
+                  <div className="col-span-2 text-right">Monto</div>
+                  <div className="col-span-5 text-center">Categoría 50/30/20</div>
+                </div>
+              </div>
+              <div className="max-h-[500px] overflow-y-auto">
+                {transactions.filter(t => !t.isIncome).length === 0 ? (
+                  <div className="p-8 text-center text-slate-400">
+                    <p>No hay gastos para categorizar.</p>
+                    <p className="text-sm mt-2">Importa un archivo Excel para comenzar.</p>
+                  </div>
+                ) : (
+                  transactions
+                    .filter(t => !t.isIncome)
+                    .map(t => (
+                      <div key={t.id} className="grid grid-cols-12 gap-4 items-center p-4 border-b border-slate-50 hover:bg-slate-25">
+                        <div className="col-span-1 text-xs text-slate-500">
+                          {typeof t.date === 'string' && t.date.includes('-')
+                            ? new Date(t.date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })
+                            : t.date}
+                        </div>
+                        <div className="col-span-4">
+                          <p className="text-sm font-medium text-slate-800 truncate">{t.description}</p>
+                        </div>
+                        <div className="col-span-2 text-right">
+                          <span className="font-bold text-slate-900">${t.amount.toLocaleString('es-CL')}</span>
+                        </div>
+                        <div className="col-span-5 flex justify-center gap-2">
+                          <button
+                            onClick={() => updateTransactionCategory(t.id, CategoryType.NEED)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.NEED
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                              }`}
+                          >
+                            50% Necesidad
+                          </button>
+                          <button
+                            onClick={() => updateTransactionCategory(t.id, CategoryType.WANT)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.WANT
+                              ? 'bg-purple-600 text-white shadow-sm'
+                              : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                              }`}
+                          >
+                            30% Deseo
+                          </button>
+                          <button
+                            onClick={() => updateTransactionCategory(t.id, CategoryType.SAVINGS)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.SAVINGS
+                              ? 'bg-green-600 text-white shadow-sm'
+                              : 'bg-green-50 text-green-600 hover:bg-green-100'
+                              }`}
+                          >
+                            20% Ahorro
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                )}
               </div>
             </div>
           </div>
