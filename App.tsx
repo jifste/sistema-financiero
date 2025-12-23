@@ -75,6 +75,18 @@ const App: React.FC = () => {
     paidInstallments: ''
   });
 
+  // Monthly subscriptions state
+  interface MonthlySubscriptionEntry {
+    id: string;
+    description: string;
+    monthlyAmount: number;
+  }
+  const [manualSubscriptions, setManualSubscriptions] = useState<MonthlySubscriptionEntry[]>([]);
+  const [newSubscription, setNewSubscription] = useState({
+    description: '',
+    monthlyAmount: ''
+  });
+
   // Convert row data to Transaction
   const rowToTransaction = (row: any, index: number): Transaction => ({
     id: `imported-${Date.now()}-${index}`,
@@ -307,6 +319,26 @@ const App: React.FC = () => {
   // Function to delete a credit operation
   const deleteCreditOperation = (id: string) => {
     setCreditOperations(prev => prev.filter(c => c.id !== id));
+  };
+
+  // Function to add a new subscription
+  const addSubscription = () => {
+    const amount = parseFloat(newSubscription.monthlyAmount) || 0;
+    if (!newSubscription.description || amount <= 0) return;
+
+    const sub: MonthlySubscriptionEntry = {
+      id: `sub-${Date.now()}`,
+      description: newSubscription.description,
+      monthlyAmount: amount
+    };
+
+    setManualSubscriptions(prev => [...prev, sub]);
+    setNewSubscription({ description: '', monthlyAmount: '' });
+  };
+
+  // Function to delete a subscription
+  const deleteSubscription = (id: string) => {
+    setManualSubscriptions(prev => prev.filter(s => s.id !== id));
   };
 
   // Derived Financial Data
@@ -1038,6 +1070,85 @@ const App: React.FC = () => {
                     <div></div>
                     <div className="text-right font-bold text-red-600">
                       ${creditOperations.reduce((sum, c) => sum + c.pendingBalance, 0).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Suscripciones Activas Mensuales */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-100 mt-6">
+              <h3 className="font-bold text-lg text-slate-900 mb-4">Suscripciones Activas Mensuales</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="md:col-span-2">
+                  <label className="text-xs text-slate-500 mb-1 block">Descripción del Servicio</label>
+                  <input
+                    type="text"
+                    value={newSubscription.description}
+                    onChange={(e) => setNewSubscription(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Ej: Netflix, Spotify, Gimnasio"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Monto Mensual</label>
+                  <input
+                    type="number"
+                    value={newSubscription.monthlyAmount}
+                    onChange={(e) => setNewSubscription(prev => ({ ...prev, monthlyAmount: e.target.value }))}
+                    placeholder="$9.990"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={addSubscription}
+                className="px-6 py-2.5 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition-all flex items-center gap-2"
+              >
+                <PlusCircle size={18} />
+                Agregar Suscripción
+              </button>
+            </div>
+
+            {/* Subscriptions table */}
+            <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-purple-50">
+                <div className="grid grid-cols-3 gap-4 text-xs font-semibold text-slate-700">
+                  <div className="col-span-2">Servicio / Suscripción</div>
+                  <div className="text-right">Monto Mensual</div>
+                </div>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto">
+                {manualSubscriptions.length === 0 ? (
+                  <div className="p-6 text-center text-slate-400">
+                    <p>No hay suscripciones registradas.</p>
+                    <p className="text-sm mt-2">Agrega tus servicios mensuales usando el formulario.</p>
+                  </div>
+                ) : (
+                  manualSubscriptions.map(s => (
+                    <div key={s.id} className="grid grid-cols-3 gap-4 items-center p-4 border-b border-slate-50 hover:bg-slate-25 group">
+                      <div className="col-span-2 flex items-center gap-2">
+                        <p className="text-sm font-medium text-slate-800">{s.description}</p>
+                        <button
+                          onClick={() => deleteSubscription(s.id)}
+                          className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold text-purple-600">${s.monthlyAmount.toLocaleString('es-CL')}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {manualSubscriptions.length > 0 && (
+                <div className="p-4 border-t border-slate-100 bg-slate-50">
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="col-span-2 font-bold text-slate-700">TOTAL MENSUAL</div>
+                    <div className="text-right font-bold text-purple-600">
+                      ${manualSubscriptions.reduce((sum, s) => sum + s.monthlyAmount, 0).toLocaleString('es-CL')}
                     </div>
                   </div>
                 </div>
