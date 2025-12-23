@@ -46,7 +46,7 @@ const INCOME = 6137000;
 type TabType = 'resumen' | 'cuentas' | 'presupuesto' | 'historial';
 
 const App: React.FC = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('resumen');
@@ -338,7 +338,26 @@ const App: React.FC = () => {
         </header>
 
         {/* Tab Content */}
-        {activeTab === 'resumen' && (
+        {activeTab === 'resumen' && transactions.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100">
+            <div className="p-6 bg-indigo-50 rounded-full mb-6">
+              <FileSpreadsheet size={48} className="text-indigo-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">¡Bienvenido a FinanceAI Pro!</h2>
+            <p className="text-slate-500 mb-6 text-center max-w-md">
+              Importa tu archivo Excel del banco para comenzar a analizar tus finanzas.
+            </p>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg"
+            >
+              <FileSpreadsheet size={20} />
+              Importar Excel/PDF
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'resumen' && transactions.length > 0 && (
           <>
             {/* Top KPIs */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
