@@ -43,7 +43,19 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 const INCOME = 6137000;
 
-type TabType = 'resumen' | 'cuentas' | 'presupuesto' | 'historial';
+type TabType = 'resumen' | 'cuentas' | 'presupuesto' | 'creditos' | 'historial';
+
+// Credit operation interface
+interface CreditOperation {
+  id: string;
+  description: string;
+  totalAmount: number;
+  totalInstallments: number;
+  monthlyInstallment: number;
+  paidInstallments: number;
+  remainingInstallments: number;
+  pendingBalance: number;
+}
 
 const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -53,6 +65,15 @@ const App: React.FC = () => {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Credit operations state
+  const [creditOperations, setCreditOperations] = useState<CreditOperation[]>([]);
+  const [newCredit, setNewCredit] = useState({
+    description: '',
+    totalAmount: '',
+    totalInstallments: '',
+    paidInstallments: ''
+  });
 
   // Convert row data to Transaction
   const rowToTransaction = (row: any, index: number): Transaction => ({
@@ -256,6 +277,38 @@ const App: React.FC = () => {
     ));
   };
 
+  // Function to add a new credit operation
+  const addCreditOperation = () => {
+    const total = parseFloat(newCredit.totalAmount) || 0;
+    const installments = parseInt(newCredit.totalInstallments) || 1;
+    const paid = parseInt(newCredit.paidInstallments) || 0;
+
+    if (!newCredit.description || total <= 0 || installments <= 0) return;
+
+    const monthlyValue = total / installments;
+    const remaining = installments - paid;
+    const pendingBalance = monthlyValue * remaining;
+
+    const operation: CreditOperation = {
+      id: `credit-${Date.now()}`,
+      description: newCredit.description,
+      totalAmount: total,
+      totalInstallments: installments,
+      monthlyInstallment: monthlyValue,
+      paidInstallments: paid,
+      remainingInstallments: remaining,
+      pendingBalance: pendingBalance
+    };
+
+    setCreditOperations(prev => [...prev, operation]);
+    setNewCredit({ description: '', totalAmount: '', totalInstallments: '', paidInstallments: '' });
+  };
+
+  // Function to delete a credit operation
+  const deleteCreditOperation = (id: string) => {
+    setCreditOperations(prev => prev.filter(c => c.id !== id));
+  };
+
   // Derived Financial Data
   // Calculate income (abonos) and expenses (cargos) from imported transactions
   const totalIncome = useMemo(() => {
@@ -314,6 +367,7 @@ const App: React.FC = () => {
             { icon: LayoutDashboard, label: 'Resumen', tab: 'resumen' as TabType },
             { icon: CreditCard, label: 'Categorizar', tab: 'cuentas' as TabType },
             { icon: PieChartIcon, label: 'Presupuesto', tab: 'presupuesto' as TabType },
+            { icon: Wallet, label: 'Créditos', tab: 'creditos' as TabType },
             { icon: Clock, label: 'Historial', tab: 'historial' as TabType },
           ].map((item) => (
             <button
@@ -853,6 +907,141 @@ const App: React.FC = () => {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Créditos Tab */}
+        {activeTab === 'creditos' && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-slate-900">Operaciones a Crédito</h2>
+
+            {/* Form to add new credit */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-100">
+              <h3 className="font-bold text-lg text-slate-900 mb-4">Agregar Nueva Operación</h3>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                <div className="md:col-span-2">
+                  <label className="text-xs text-slate-500 mb-1 block">Descripción de la Compra</label>
+                  <input
+                    type="text"
+                    value={newCredit.description}
+                    onChange={(e) => setNewCredit(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Ej: iPhone 15 Pro"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Monto Total</label>
+                  <input
+                    type="number"
+                    value={newCredit.totalAmount}
+                    onChange={(e) => setNewCredit(prev => ({ ...prev, totalAmount: e.target.value }))}
+                    placeholder="$1.000.000"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">N° de Cuotas</label>
+                  <input
+                    type="number"
+                    value={newCredit.totalInstallments}
+                    onChange={(e) => setNewCredit(prev => ({ ...prev, totalInstallments: e.target.value }))}
+                    placeholder="12"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Cuotas Pagadas</label>
+                  <input
+                    type="number"
+                    value={newCredit.paidInstallments}
+                    onChange={(e) => setNewCredit(prev => ({ ...prev, paidInstallments: e.target.value }))}
+                    placeholder="3"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={addCreditOperation}
+                className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2"
+              >
+                <PlusCircle size={18} />
+                Agregar Crédito
+              </button>
+            </div>
+
+            {/* Credit operations table */}
+            <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-yellow-50">
+                <div className="grid grid-cols-8 gap-2 text-xs font-semibold text-slate-700">
+                  <div className="col-span-2">Descripción de la Compra</div>
+                  <div className="text-right">Monto Total</div>
+                  <div className="text-center">N° Cuotas</div>
+                  <div className="text-right">Valor Cuota</div>
+                  <div className="text-center">Pagadas</div>
+                  <div className="text-center">Restantes</div>
+                  <div className="text-right">Saldo Pendiente</div>
+                </div>
+              </div>
+              <div className="max-h-[400px] overflow-y-auto">
+                {creditOperations.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400">
+                    <p>No hay créditos registrados.</p>
+                    <p className="text-sm mt-2">Agrega tus compras a cuotas usando el formulario.</p>
+                  </div>
+                ) : (
+                  creditOperations.map(c => (
+                    <div key={c.id} className="grid grid-cols-8 gap-2 items-center p-4 border-b border-slate-50 hover:bg-slate-25 group">
+                      <div className="col-span-2 flex items-center gap-2">
+                        <p className="text-sm font-medium text-slate-800 truncate">{c.description}</p>
+                        <button
+                          onClick={() => deleteCreditOperation(c.id)}
+                          className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold text-slate-900">${c.totalAmount.toLocaleString('es-CL')}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-slate-600">{c.totalInstallments}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-medium text-indigo-600">${c.monthlyInstallment.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-green-600 font-medium">{c.paidInstallments}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-orange-600 font-medium">{c.remainingInstallments}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold text-red-600">${c.pendingBalance.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {creditOperations.length > 0 && (
+                <div className="p-4 border-t border-slate-100 bg-slate-50">
+                  <div className="grid grid-cols-8 gap-2 text-sm">
+                    <div className="col-span-2 font-bold text-slate-700">TOTALES</div>
+                    <div className="text-right font-bold text-slate-900">
+                      ${creditOperations.reduce((sum, c) => sum + c.totalAmount, 0).toLocaleString('es-CL')}
+                    </div>
+                    <div></div>
+                    <div className="text-right font-bold text-indigo-600">
+                      ${creditOperations.reduce((sum, c) => sum + c.monthlyInstallment, 0).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                    </div>
+                    <div></div>
+                    <div></div>
+                    <div className="text-right font-bold text-red-600">
+                      ${creditOperations.reduce((sum, c) => sum + c.pendingBalance, 0).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
