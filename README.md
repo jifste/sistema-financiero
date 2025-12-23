@@ -1,49 +1,20 @@
-# FinanceAI 💰
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-Sistema de gestión financiera personal con inteligencia artificial, construido con Python y Streamlit.
+# Run and deploy your AI Studio app
 
-## Características
+This contains everything you need to run your app locally.
 
-- 📊 Dashboard financiero interactivo
-- 📈 Visualización de gastos con gráficos
-- 🎯 Regla 50/30/20 para distribución de dinero
-- 📁 Carga y análisis de archivos de transacciones
-- ✏️ Categorización manual de transacciones
+View your app in AI Studio: https://ai.studio/apps/drive/1tFgsrn2FRZ6BNXBC7G8bZiQQg8EwNycf
 
-## Instalación
+## Run Locally
 
-1. Clona el repositorio:
-```bash
-git clone https://github.com/TU_USUARIO/financeai.git
-cd financeai
-```
+**Prerequisites:**  Node.js
 
-2. Instala las dependencias:
-```bash
-pip install -r requirements.txt
-```
 
-3. Ejecuta la aplicación:
-```bash
-streamlit run app.py
-# o
-python3 -m streamlit run app.py
-```
-
-## Uso
-
-1. Abre [http://localhost:8501](http://localhost:8501) en tu navegador
-2. Carga tu archivo de transacciones (CSV o Excel)
-3. Revisa y categoriza tus movimientos
-4. Analiza tu distribución de gastos con la regla 50/30/20
-
-## Tecnologías
-
-- **Python 3**
-- **Streamlit** - Framework de aplicaciones web
-- **Pandas** - Análisis de datos
-- **Plotly** - Visualizaciones interactivas
-
-## Licencia
-
-MIT License
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
