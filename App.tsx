@@ -57,23 +57,103 @@ const App: React.FC = () => {
   // Convert row data to Transaction
   const rowToTransaction = (row: any, index: number): Transaction => ({
     id: `imported-${Date.now()}-${index}`,
-    description: row.descripcion || row.description || row.Descripcion || row.concepto || row.Concepto || 'Sin descripción',
-    amount: Math.abs(parseFloat(String(row.monto || row.amount || row.Monto || row.valor || row.Valor || '0').replace(/[^0-9.-]/g, ''))),
+    description: row.descripcion || row.description || row.Descripcion || row.concepto || row.Concepto || row.Movimientos || row.movimientos || 'Sin descripción',
+    amount: Math.abs(parseFloat(String(row.monto || row.amount || row.Monto || row.valor || row.Valor || row.Cargos || row.cargos || row.Abonos || row.abonos || '0').replace(/[^0-9.-]/g, ''))),
     date: row.fecha || row.date || row.Fecha || new Date().toISOString(),
     category: CategoryType.WANT,
     subCategory: row.categoria || row.category || row.Categoria || 'Otros',
     isInstallment: false
   });
 
-  // Excel Import Handler
+  // Convert Excel serial date to JS Date
+  const excelDateToJSDate = (serial: number): string => {
+    const utcDays = Math.floor(serial - 25569);
+    const date = new Date(utcDays * 86400 * 1000);
+    return date.toISOString().split('T')[0];
+  };
+
+  // Excel Import Handler - supports Chilean bank statements
   const handleExcelImport = async (file: File) => {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data);
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-    const importedTransactions = jsonData.map((row: any, index: number) => rowToTransaction(row, index));
+    // Get raw data with headers as first row array
+    const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+    // Find the header row (look for rows containing "Fecha", "Movimientos", "Cargos", etc)
+    let headerRowIndex = -1;
+    let headers: string[] = [];
+
+    for (let i = 0; i < Math.min(20, rawData.length); i++) {
+      const row = rawData[i];
+      if (row && Array.isArray(row)) {
+        const rowStr = row.map(c => String(c || '').toLowerCase()).join(' ');
+        if (rowStr.includes('fecha') && (rowStr.includes('movimiento') || rowStr.includes('cargo') || rowStr.includes('descripcion'))) {
+          headerRowIndex = i;
+          headers = row.map(c => String(c || '').trim());
+          break;
+        }
+      }
+    }
+
+    if (headerRowIndex === -1) {
+      // Fallback: use first row as header
+      headerRowIndex = 0;
+      headers = rawData[0]?.map((c: any) => String(c || '').trim()) || [];
+    }
+
+    // Map columns
+    const findCol = (names: string[]) => headers.findIndex(h => names.some(n => h.toLowerCase().includes(n.toLowerCase())));
+    const fechaCol = findCol(['fecha', 'date']);
+    const descCol = findCol(['movimiento', 'descripcion', 'concepto', 'detalle']);
+    const cargoCol = findCol(['cargo', 'debito', 'egreso', 'gasto']);
+    const abonoCol = findCol(['abono', 'credito', 'ingreso', 'deposito']);
+
+    const importedTransactions: Transaction[] = [];
+
+    // Parse data rows (skip header)
+    for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || !Array.isArray(row) || row.length < 3) continue;
+
+      // Get date
+      let dateStr = '';
+      if (fechaCol >= 0 && row[fechaCol] !== undefined) {
+        const dateVal = row[fechaCol];
+        if (typeof dateVal === 'number' && dateVal > 40000 && dateVal < 50000) {
+          dateStr = excelDateToJSDate(dateVal);
+        } else {
+          dateStr = String(dateVal);
+        }
+      }
+
+      // Get description
+      const desc = descCol >= 0 ? String(row[descCol] || '').trim() : '';
+      if (!desc || desc.length < 2) continue;
+
+      // Get amount (cargo or abono)
+      let amount = 0;
+      if (cargoCol >= 0 && row[cargoCol] && row[cargoCol] !== '') {
+        amount = Math.abs(parseFloat(String(row[cargoCol]).replace(/[^0-9.-]/g, '')));
+      } else if (abonoCol >= 0 && row[abonoCol] && row[abonoCol] !== '') {
+        amount = Math.abs(parseFloat(String(row[abonoCol]).replace(/[^0-9.-]/g, '')));
+      }
+
+      if (amount > 0) {
+        importedTransactions.push({
+          id: `excel-${Date.now()}-${i}`,
+          description: desc,
+          amount: amount,
+          date: dateStr || new Date().toISOString(),
+          category: CategoryType.WANT,
+          subCategory: 'Banco',
+          isInstallment: false
+        });
+      }
+    }
+
     setTransactions(prev => [...importedTransactions, ...prev]);
     return importedTransactions.length;
   };
