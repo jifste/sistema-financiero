@@ -649,8 +649,16 @@ const App: React.FC = () => {
 
         {activeTab === 'presupuesto' && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-slate-900">Presupuesto 50/30/20</h2>
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-slate-900">Presupuesto 50/30/20</h2>
+              <div className="bg-green-50 px-4 py-2 rounded-xl">
+                <span className="text-sm text-green-600 font-medium">Ingresos: </span>
+                <span className="text-lg font-bold text-green-700">${totalIncome.toLocaleString('es-CL')}</span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Necesidades - 50% */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
@@ -661,12 +669,14 @@ const App: React.FC = () => {
                     <p className="text-xs text-slate-400">Meta: 50%</p>
                   </div>
                 </div>
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">{health.needPct.toFixed(1)}%</h3>
+                <h3 className="text-2xl font-bold text-blue-600 mb-2">${(totalIncome * 0.50).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</h3>
                 <div className="w-full bg-slate-100 h-2 rounded-full">
-                  <div className={`h-full rounded-full ${health.needPct > 50 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, health.needPct)}%` }}></div>
+                  <div className="bg-blue-500 h-full rounded-full" style={{ width: '50%' }}></div>
                 </div>
-                <p className="text-sm text-slate-500 mt-2">${health.totals[CategoryType.NEED].toLocaleString('es-CL')}</p>
+                <p className="text-xs text-slate-400 mt-2">Arriendo, servicios, alimentación básica</p>
               </div>
+
+              {/* Deseos - 30% */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl">
@@ -677,12 +687,14 @@ const App: React.FC = () => {
                     <p className="text-xs text-slate-400">Meta: 30%</p>
                   </div>
                 </div>
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">{health.wantPct.toFixed(1)}%</h3>
+                <h3 className="text-2xl font-bold text-purple-600 mb-2">${(totalIncome * 0.30).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</h3>
                 <div className="w-full bg-slate-100 h-2 rounded-full">
-                  <div className={`h-full rounded-full ${health.wantPct > 30 ? 'bg-red-500' : 'bg-purple-500'}`} style={{ width: `${Math.min(100, (health.wantPct / 30) * 100)}%` }}></div>
+                  <div className="bg-purple-500 h-full rounded-full" style={{ width: '30%' }}></div>
                 </div>
-                <p className="text-sm text-slate-500 mt-2">${health.totals[CategoryType.WANT].toLocaleString('es-CL')}</p>
+                <p className="text-xs text-slate-400 mt-2">Entretenimiento, salidas, compras</p>
               </div>
+
+              {/* Ahorro - 20% */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-3 bg-green-50 text-green-600 rounded-2xl">
@@ -693,20 +705,64 @@ const App: React.FC = () => {
                     <p className="text-xs text-slate-400">Meta: 20%</p>
                   </div>
                 </div>
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">{((health.totals[CategoryType.SAVINGS] / INCOME) * 100).toFixed(1)}%</h3>
+                <h3 className="text-2xl font-bold text-green-600 mb-2">${(totalIncome * 0.20).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</h3>
                 <div className="w-full bg-slate-100 h-2 rounded-full">
-                  <div className="bg-green-500 h-full rounded-full" style={{ width: `${Math.min(100, (health.totals[CategoryType.SAVINGS] / INCOME) * 100 * 5)}%` }}></div>
+                  <div className="bg-green-500 h-full rounded-full" style={{ width: '20%' }}></div>
                 </div>
-                <p className="text-sm text-slate-500 mt-2">${health.totals[CategoryType.SAVINGS].toLocaleString('es-CL')}</p>
+                <p className="text-xs text-slate-400 mt-2">Fondo de emergencia, inversiones</p>
               </div>
             </div>
+
+            {/* Resumen vs Gastos Reales */}
             <div className="bg-white rounded-3xl p-6 border border-slate-100">
-              <h3 className="font-bold text-lg text-slate-900 mb-4">Distribución por Categoría</h3>
+              <h3 className="font-bold text-lg text-slate-900 mb-4">Comparación: Presupuesto vs Gastos Reales</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                    <span className="text-slate-600 font-medium">Tus Gastos Totales</span>
+                    <span className="text-lg font-bold text-slate-900">${totalExpenses.toLocaleString('es-CL')}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                    <span className="text-slate-600 font-medium">Presupuesto Máximo (80%)</span>
+                    <span className="text-lg font-bold text-slate-900">${(totalIncome * 0.80).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                  </div>
+                  <div className={`flex justify-between items-center p-3 rounded-xl ${totalExpenses <= totalIncome * 0.80 ? 'bg-green-50' : 'bg-red-50'}`}>
+                    <span className={`font-medium ${totalExpenses <= totalIncome * 0.80 ? 'text-green-600' : 'text-red-600'}`}>
+                      {totalExpenses <= totalIncome * 0.80 ? '✅ Dentro del presupuesto' : '⚠️ Excediste el presupuesto'}
+                    </span>
+                    <span className={`text-lg font-bold ${totalExpenses <= totalIncome * 0.80 ? 'text-green-700' : 'text-red-700'}`}>
+                      ${Math.abs((totalIncome * 0.80) - totalExpenses).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <ResponsiveContainer width="100%" height={150}>
+                    <BarChart data={[
+                      { name: 'Gastos', value: totalExpenses, fill: '#6366f1' },
+                      { name: 'Límite 80%', value: totalIncome * 0.80, fill: '#10b981' }
+                    ]} layout="vertical">
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 12 }} />
+                      <Tooltip formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, 'Monto']} />
+                      <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                        {[0, 1].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={index === 0 ? '#6366f1' : '#10b981'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            {/* Distribución actual de gastos */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-100">
+              <h3 className="font-bold text-lg text-slate-900 mb-4">Distribución de Gastos por Categoría</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={categorySpending.slice(0, 6)} layout="vertical">
+                  <BarChart data={categorySpending.slice(0, 8)} layout="vertical">
                     <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={120} tick={{ fontSize: 12 }} />
+                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={150} tick={{ fontSize: 12 }} />
                     <Tooltip formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, 'Gasto']} />
                     <Bar dataKey="value" fill="#4f46e5" radius={[0, 8, 8, 0]} />
                   </BarChart>
