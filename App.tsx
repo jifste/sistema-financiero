@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -58,7 +58,19 @@ interface CreditOperation {
 }
 
 const App: React.FC = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Load saved data from localStorage on init
+  const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  };
+
+  const [transactions, setTransactions] = useState<Transaction[]>(() =>
+    loadFromStorage('financeai_transactions', [])
+  );
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('resumen');
@@ -66,8 +78,10 @@ const App: React.FC = () => {
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Credit operations state
-  const [creditOperations, setCreditOperations] = useState<CreditOperation[]>([]);
+  // Credit operations state - loaded from localStorage
+  const [creditOperations, setCreditOperations] = useState<CreditOperation[]>(() =>
+    loadFromStorage('financeai_credits', [])
+  );
   const [newCredit, setNewCredit] = useState({
     description: '',
     totalAmount: '',
@@ -81,11 +95,26 @@ const App: React.FC = () => {
     description: string;
     monthlyAmount: number;
   }
-  const [manualSubscriptions, setManualSubscriptions] = useState<MonthlySubscriptionEntry[]>([]);
+  const [manualSubscriptions, setManualSubscriptions] = useState<MonthlySubscriptionEntry[]>(() =>
+    loadFromStorage('financeai_subscriptions', [])
+  );
   const [newSubscription, setNewSubscription] = useState({
     description: '',
     monthlyAmount: ''
   });
+
+  // Save to localStorage when data changes
+  useEffect(() => {
+    localStorage.setItem('financeai_transactions', JSON.stringify(transactions));
+  }, [transactions]);
+
+  useEffect(() => {
+    localStorage.setItem('financeai_credits', JSON.stringify(creditOperations));
+  }, [creditOperations]);
+
+  useEffect(() => {
+    localStorage.setItem('financeai_subscriptions', JSON.stringify(manualSubscriptions));
+  }, [manualSubscriptions]);
 
   // Convert row data to Transaction
   const rowToTransaction = (row: any, index: number): Transaction => ({
