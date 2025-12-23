@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+import * as pdfjsLib from 'pdfjs-dist';
 import {
   LayoutDashboard,
   CreditCard,
@@ -18,7 +19,9 @@ import {
   Upload,
   Wallet,
   Target,
-  History
+  History,
+  FileSpreadsheet,
+  FileText
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 
@@ -35,6 +38,9 @@ import { BentoCard } from './components/BentoCard';
 import { FinancialHealthGauge } from './components/FinancialHealthGauge';
 import { SnowballSimulator } from './components/SnowballSimulator';
 
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
 const INCOME = 6137000;
 
 type TabType = 'resumen' | 'cuentas' | 'presupuesto' | 'historial';
@@ -45,40 +51,106 @@ const App: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('resumen');
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // CSV Import Handler
-  const handleCSVImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  // Convert row data to Transaction
+  const rowToTransaction = (row: any, index: number): Transaction => ({
+    id: `imported-${Date.now()}-${index}`,
+    description: row.descripcion || row.description || row.Descripcion || row.concepto || row.Concepto || 'Sin descripción',
+    amount: Math.abs(parseFloat(String(row.monto || row.amount || row.Monto || row.valor || row.Valor || '0').replace(/[^0-9.-]/g, ''))),
+    date: row.fecha || row.date || row.Fecha || new Date().toISOString(),
+    category: CategoryType.WANT,
+    subCategory: row.categoria || row.category || row.Categoria || 'Otros',
+    isInstallment: false
+  });
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const importedTransactions: Transaction[] = results.data.map((row: any, index: number) => ({
-          id: `imported-${Date.now()}-${index}`,
-          description: row.descripcion || row.description || row.Descripcion || row.concepto || 'Sin descripción',
-          amount: Math.abs(parseFloat(row.monto || row.amount || row.Monto || row.valor || '0')),
-          date: row.fecha || row.date || row.Fecha || new Date().toISOString(),
-          category: CategoryType.WANT,
-          subCategory: row.categoria || row.category || row.Categoria || 'Otros',
-          isInstallment: false
-        }));
+  // Excel Import Handler
+  const handleExcelImport = async (file: File) => {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-        setTransactions(prev => [...importedTransactions, ...prev]);
-        setImportStatus(`✅ ${importedTransactions.length} transacciones importadas`);
-        setTimeout(() => setImportStatus(null), 3000);
-      },
-      error: (error) => {
-        setImportStatus(`❌ Error: ${error.message}`);
-        setTimeout(() => setImportStatus(null), 3000);
+    const importedTransactions = jsonData.map((row: any, index: number) => rowToTransaction(row, index));
+    setTransactions(prev => [...importedTransactions, ...prev]);
+    return importedTransactions.length;
+  };
+
+  // PDF Import Handler (extracts text and tries to parse transactions)
+  const handlePDFImport = async (file: File) => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map((item: any) => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
+
+    // Simple pattern matching for common bank statement formats
+    const lines = fullText.split('\n').filter(line => line.trim());
+    const amountPattern = /\$?\s*[\d,.]+/g;
+    const datePattern = /\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/g;
+
+    const importedTransactions: Transaction[] = [];
+
+    lines.forEach((line, index) => {
+      const amounts = line.match(amountPattern);
+      const dates = line.match(datePattern);
+
+      if (amounts && amounts.length > 0) {
+        const amount = parseFloat(amounts[amounts.length - 1].replace(/[$,\s]/g, ''));
+        if (amount > 0 && amount < 100000000) {
+          importedTransactions.push({
+            id: `pdf-${Date.now()}-${index}`,
+            description: line.substring(0, 50).replace(/[\d$,.-]/g, '').trim() || 'Transacción PDF',
+            amount: Math.abs(amount),
+            date: dates?.[0] || new Date().toISOString(),
+            category: CategoryType.WANT,
+            subCategory: 'Importado PDF',
+            isInstallment: false
+          });
+        }
       }
     });
 
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    setTransactions(prev => [...importedTransactions, ...prev]);
+    return importedTransactions.length;
+  };
+
+  // Main File Import Handler
+  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportStatus('📥 Procesando archivo...');
+
+    try {
+      let count = 0;
+      const extension = file.name.split('.').pop()?.toLowerCase();
+
+      if (extension === 'xlsx' || extension === 'xls') {
+        count = await handleExcelImport(file);
+        setImportStatus(`✅ ${count} transacciones importadas desde Excel`);
+      } else if (extension === 'pdf') {
+        count = await handlePDFImport(file);
+        setImportStatus(`✅ ${count} transacciones extraídas del PDF`);
+      } else {
+        setImportStatus('❌ Formato no soportado. Use Excel (.xlsx) o PDF');
+      }
+    } catch (error: any) {
+      setImportStatus(`❌ Error: ${error.message}`);
+    } finally {
+      setIsImporting(false);
+      setTimeout(() => setImportStatus(null), 4000);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -170,16 +242,17 @@ const App: React.FC = () => {
             <input
               type="file"
               ref={fileInputRef}
-              accept=".csv"
-              onChange={handleCSVImport}
+              accept=".xlsx,.xls,.pdf"
+              onChange={handleFileImport}
               className="hidden"
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-medium shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2"
+              disabled={isImporting}
+              className={`px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-medium shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2 ${isImporting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <Upload size={18} />
-              Importar CSV
+              <FileSpreadsheet size={18} />
+              Importar Excel/PDF
             </button>
           </div>
         </header>
