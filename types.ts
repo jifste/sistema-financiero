@@ -13,6 +13,7 @@ export interface Transaction {
   category: CategoryType;
   subCategory: string;
   isInstallment: boolean;
+  isIncome?: boolean;  // true = abono (income), false = cargo (expense)
   installmentCurrent?: number;
   installmentTotal?: number;
   installmentValue?: number;

@@ -133,12 +133,26 @@ const App: React.FC = () => {
       const desc = descCol >= 0 ? String(row[descCol] || '').trim() : '';
       if (!desc || desc.length < 2) continue;
 
-      // Get amount (cargo or abono)
+      // Get amount and determine if income (abono) or expense (cargo)
       let amount = 0;
+      let isIncome = false;
+
+      // Check cargo first (expense)
       if (cargoCol >= 0 && row[cargoCol] && row[cargoCol] !== '') {
-        amount = Math.abs(parseFloat(String(row[cargoCol]).replace(/[^0-9.-]/g, '')));
-      } else if (abonoCol >= 0 && row[abonoCol] && row[abonoCol] !== '') {
-        amount = Math.abs(parseFloat(String(row[abonoCol]).replace(/[^0-9.-]/g, '')));
+        const cargoVal = parseFloat(String(row[cargoCol]).replace(/[^0-9.-]/g, ''));
+        if (!isNaN(cargoVal) && cargoVal > 0) {
+          amount = Math.abs(cargoVal);
+          isIncome = false;
+        }
+      }
+
+      // Check abono (income)
+      if (amount === 0 && abonoCol >= 0 && row[abonoCol] && row[abonoCol] !== '') {
+        const abonoVal = parseFloat(String(row[abonoCol]).replace(/[^0-9.-]/g, ''));
+        if (!isNaN(abonoVal) && abonoVal > 0) {
+          amount = Math.abs(abonoVal);
+          isIncome = true;
+        }
       }
 
       if (amount > 0) {
@@ -148,8 +162,9 @@ const App: React.FC = () => {
           amount: amount,
           date: dateStr || new Date().toISOString(),
           category: CategoryType.WANT,
-          subCategory: 'Banco',
-          isInstallment: false
+          subCategory: isIncome ? 'Ingreso' : 'Gasto',
+          isInstallment: false,
+          isIncome: isIncome
         });
       }
     }
@@ -235,14 +250,25 @@ const App: React.FC = () => {
   };
 
   // Derived Financial Data
-  const health = useMemo(() => calculateFinancialHealth(transactions, INCOME), [transactions]);
+  // Calculate income (abonos) and expenses (cargos) from imported transactions
+  const totalIncome = useMemo(() => {
+    return transactions
+      .filter(t => t.isIncome === true)
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions]);
+
+  const totalExpenses = useMemo(() => {
+    return transactions
+      .filter(t => t.isIncome === false || t.isIncome === undefined)
+      .reduce((sum, t) => sum + (t.isInstallment ? (t.installmentValue || 0) : t.amount), 0);
+  }, [transactions]);
+
+  const health = useMemo(() => calculateFinancialHealth(transactions, totalIncome || 1), [transactions, totalIncome]);
   const subscriptions = useMemo(() => detectSubscriptions(transactions), [transactions]);
   const debts = useMemo(() => getDebtTimeline(transactions), [transactions]);
   const projection = useMemo(() => getCashFlowProjection(transactions), [transactions]);
 
-  const totalMonthlyExpenses = useMemo(() => {
-    return transactions.reduce((sum, t) => sum + (t.isInstallment ? (t.installmentValue || 0) : t.amount), 0);
-  }, [transactions]);
+  const totalMonthlyExpenses = totalExpenses;
 
   const totalDebtBalance = useMemo(() => {
     return debts.reduce((sum, d) => sum + d.remainingBalance, 0);
@@ -366,10 +392,10 @@ const App: React.FC = () => {
                   <div className="p-3 bg-green-50 text-green-600 rounded-2xl">
                     <ArrowDownCircle size={24} />
                   </div>
-                  <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg">+12% vs last month</span>
+                  <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg">Abonos</span>
                 </div>
                 <p className="text-slate-500 text-sm font-medium">Ingresos Estimados</p>
-                <h2 className="text-2xl font-bold text-slate-900">${INCOME.toLocaleString('es-CL')}</h2>
+                <h2 className="text-2xl font-bold text-slate-900">${totalIncome.toLocaleString('es-CL')}</h2>
               </div>
 
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
@@ -377,10 +403,10 @@ const App: React.FC = () => {
                   <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
                     <ArrowUpCircle size={24} />
                   </div>
-                  <span className="text-xs font-bold text-slate-500 bg-slate-50 px-2 py-1 rounded-lg">Fijo Mensual</span>
+                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">Cargos</span>
                 </div>
                 <p className="text-slate-500 text-sm font-medium">Gastos Totales</p>
-                <h2 className="text-2xl font-bold text-slate-900">${totalMonthlyExpenses.toLocaleString('es-CL')}</h2>
+                <h2 className="text-2xl font-bold text-slate-900">${totalExpenses.toLocaleString('es-CL')}</h2>
               </div>
 
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
