@@ -2,6 +2,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { financeAILogo, financeAIIcon } from './src/logo-data';
 import {
   LayoutDashboard,
   CreditCard,
@@ -22,9 +25,30 @@ import {
   History,
   FileSpreadsheet,
   FileText,
-  Settings
+  Settings,
+  Tag,
+  ShoppingCart,
+  Heart,
+  Car,
+  Plane,
+  Smartphone,
+  Shirt,
+  Home,
+  GraduationCap,
+  Utensils,
+  Gift,
+  Sparkles,
+  Package,
+  MoreHorizontal,
+  Check,
+  Calendar,
+  ChevronLeft,
+  ChevronDown,
+  Plus,
+  X,
+  Download
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 
 import { MOCK_TRANSACTIONS } from './constants';
 import { CategoryType, Transaction } from './types';
@@ -38,13 +62,32 @@ import {
 import { BentoCard } from './components/BentoCard';
 import { FinancialHealthGauge } from './components/FinancialHealthGauge';
 import { SnowballSimulator } from './components/SnowballSimulator';
+import { AIChat } from './components/AIChat';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const INCOME = 6137000;
 
-type TabType = 'resumen' | 'cuentas' | 'presupuesto' | 'creditos' | 'historial';
+type TabType = 'resumen' | 'movimientos' | 'cuentas' | 'presupuesto' | 'creditos' | 'calendario' | 'proyectos' | 'historial';
+
+// Expense categories for transaction classification
+const EXPENSE_CATEGORIES = [
+  { id: 'alimentacion', name: 'Alimentación', icon: ShoppingCart, color: 'bg-green-500' },
+  { id: 'salud', name: 'Salud', icon: Heart, color: 'bg-red-500' },
+  { id: 'entretencion', name: 'Entretención', icon: Sparkles, color: 'bg-purple-500' },
+  { id: 'transporte', name: 'Transporte', icon: Car, color: 'bg-blue-500' },
+  { id: 'viajes', name: 'Viajes', icon: Plane, color: 'bg-cyan-500' },
+  { id: 'tecnologia', name: 'Tecnología', icon: Smartphone, color: 'bg-indigo-500' },
+  { id: 'ropa', name: 'Ropa', icon: Shirt, color: 'bg-pink-500' },
+  { id: 'calzado', name: 'Calzado', icon: Package, color: 'bg-orange-500' },
+  { id: 'aseo', name: 'Artículos de Aseo', icon: Sparkles, color: 'bg-teal-500' },
+  { id: 'hogar', name: 'Hogar', icon: Home, color: 'bg-amber-500' },
+  { id: 'educacion', name: 'Educación', icon: GraduationCap, color: 'bg-violet-500' },
+  { id: 'restaurantes', name: 'Restaurantes', icon: Utensils, color: 'bg-rose-500' },
+  { id: 'regalos', name: 'Regalos', icon: Gift, color: 'bg-fuchsia-500' },
+  { id: 'otros', name: 'Otros', icon: MoreHorizontal, color: 'bg-slate-500' },
+] as const;
 
 // Credit operation interface
 interface CreditOperation {
@@ -56,6 +99,35 @@ interface CreditOperation {
   paidInstallments: number;
   remainingInstallments: number;
   pendingBalance: number;
+}
+
+// Interface for imported files tracking
+interface ImportedFile {
+  id: string;
+  name: string;
+  type: 'excel' | 'pdf';
+  importDate: string;
+  transactionCount: number;
+  transactionIds: string[];
+}
+
+// Interface for calendar tasks
+interface CalendarTask {
+  id: string;
+  date: string; // ISO date string
+  description: string;
+  type: 'pago' | 'recordatorio' | 'otro';
+  completed: boolean;
+}
+
+// Interface for savings projects
+interface SavingsProject {
+  id: string;
+  name: string;
+  targetAmount: number;
+  targetDate: string; // ISO date string
+  savedAmount: number;
+  createdAt: string;
 }
 
 const App: React.FC = () => {
@@ -104,6 +176,27 @@ const App: React.FC = () => {
     monthlyAmount: ''
   });
 
+  // Calendar tasks state
+  const [calendarTasks, setCalendarTasks] = useState<CalendarTask[]>(() =>
+    loadFromStorage('financeai_calendar_tasks', [])
+  );
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [newTask, setNewTask] = useState({
+    description: '',
+    type: 'pago' as 'pago' | 'recordatorio' | 'otro'
+  });
+
+  // Savings projects state
+  const [savingsProjects, setSavingsProjects] = useState<SavingsProject[]>(() =>
+    loadFromStorage('financeai_savings_projects', [])
+  );
+  const [newProject, setNewProject] = useState({
+    name: '',
+    targetAmount: '',
+    targetDate: ''
+  });
+
   // Save to localStorage when data changes
   useEffect(() => {
     localStorage.setItem('financeai_transactions', JSON.stringify(transactions));
@@ -116,6 +209,24 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('financeai_subscriptions', JSON.stringify(manualSubscriptions));
   }, [manualSubscriptions]);
+
+  useEffect(() => {
+    localStorage.setItem('financeai_calendar_tasks', JSON.stringify(calendarTasks));
+  }, [calendarTasks]);
+
+  useEffect(() => {
+    localStorage.setItem('financeai_savings_projects', JSON.stringify(savingsProjects));
+  }, [savingsProjects]);
+
+  // Imported files state
+  const [importedFiles, setImportedFiles] = useState<ImportedFile[]>(() =>
+    loadFromStorage('financeai_imported_files', [])
+  );
+
+  // Save imported files to localStorage
+  useEffect(() => {
+    localStorage.setItem('financeai_imported_files', JSON.stringify(importedFiles));
+  }, [importedFiles]);
 
   // User name state
   const [userName, setUserName] = useState<string>(() =>
@@ -250,8 +361,9 @@ const App: React.FC = () => {
       }
 
       if (amount > 0) {
+        const txId = `excel-${Date.now()}-${i}`;
         importedTransactions.push({
-          id: `excel-${Date.now()}-${i}`,
+          id: txId,
           description: desc,
           amount: amount,
           date: dateStr || new Date().toISOString(),
@@ -264,7 +376,10 @@ const App: React.FC = () => {
     }
 
     setTransactions(prev => [...importedTransactions, ...prev]);
-    return importedTransactions.length;
+    return {
+      count: importedTransactions.length,
+      ids: importedTransactions.map(t => t.id)
+    };
   };
 
   // PDF Import Handler (extracts text and tries to parse transactions)
@@ -308,7 +423,10 @@ const App: React.FC = () => {
     });
 
     setTransactions(prev => [...importedTransactions, ...prev]);
-    return importedTransactions.length;
+    return {
+      count: importedTransactions.length,
+      ids: importedTransactions.map(t => t.id)
+    };
   };
 
   // Main File Import Handler
@@ -320,15 +438,41 @@ const App: React.FC = () => {
     setImportStatus('📥 Procesando archivo...');
 
     try {
-      let count = 0;
+      let result = { count: 0, ids: [] as string[] };
       const extension = file.name.split('.').pop()?.toLowerCase();
 
       if (extension === 'xlsx' || extension === 'xls') {
-        count = await handleExcelImport(file);
-        setImportStatus(`✅ ${count} transacciones importadas desde Excel`);
+        result = await handleExcelImport(file);
+        setImportStatus(`✅ ${result.count} transacciones importadas desde Excel`);
+
+        // Register imported file
+        if (result.count > 0) {
+          const importedFile: ImportedFile = {
+            id: `file-${Date.now()}`,
+            name: file.name,
+            type: 'excel',
+            importDate: new Date().toISOString(),
+            transactionCount: result.count,
+            transactionIds: result.ids
+          };
+          setImportedFiles(prev => [...prev, importedFile]);
+        }
       } else if (extension === 'pdf') {
-        count = await handlePDFImport(file);
-        setImportStatus(`✅ ${count} transacciones extraídas del PDF`);
+        result = await handlePDFImport(file);
+        setImportStatus(`✅ ${result.count} transacciones extraídas del PDF`);
+
+        // Register imported file
+        if (result.count > 0) {
+          const importedFile: ImportedFile = {
+            id: `file-${Date.now()}`,
+            name: file.name,
+            type: 'pdf',
+            importDate: new Date().toISOString(),
+            transactionCount: result.count,
+            transactionIds: result.ids
+          };
+          setImportedFiles(prev => [...prev, importedFile]);
+        }
       } else {
         setImportStatus('❌ Formato no soportado. Use Excel (.xlsx) o PDF');
       }
@@ -347,6 +491,13 @@ const App: React.FC = () => {
   const updateTransactionCategory = (id: string, newCategory: CategoryType) => {
     setTransactions(prev => prev.map(t =>
       t.id === id ? { ...t, category: newCategory } : t
+    ));
+  };
+
+  // Function to update a transaction's expense category (for classification)
+  const updateTransactionExpenseCategory = (id: string, expenseCategory: string) => {
+    setTransactions(prev => prev.map(t =>
+      t.id === id ? { ...t, subCategory: expenseCategory } : t
     ));
   };
 
@@ -420,6 +571,416 @@ const App: React.FC = () => {
     setManualSubscriptions(prev => prev.filter(s => s.id !== id));
   };
 
+  // Function to delete an imported file and its transactions
+  const deleteImportedFile = (fileId: string) => {
+    const file = importedFiles.find(f => f.id === fileId);
+    if (file) {
+      // Remove all transactions associated with this file
+      setTransactions(prev => prev.filter(t => !file.transactionIds.includes(t.id)));
+      // Remove the file from tracking
+      setImportedFiles(prev => prev.filter(f => f.id !== fileId));
+    }
+  };
+
+  // Function to clear all transactions (for orphaned data cleanup)
+  const clearAllTransactions = () => {
+    setTransactions([]);
+    setImportedFiles([]);
+  };
+
+  // Function to add a calendar task
+  const addCalendarTask = () => {
+    if (!selectedDate || !newTask.description.trim()) return;
+
+    const task: CalendarTask = {
+      id: `task-${Date.now()}`,
+      date: selectedDate,
+      description: newTask.description.trim(),
+      type: newTask.type,
+      completed: false
+    };
+
+    setCalendarTasks(prev => [...prev, task]);
+    setNewTask({ description: '', type: 'pago' });
+    setSelectedDate(null);
+  };
+
+  // Function to delete a calendar task
+  const deleteCalendarTask = (id: string) => {
+    setCalendarTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Function to toggle task completion status
+  const toggleTaskCompleted = (id: string) => {
+    setCalendarTasks(prev => prev.map(t =>
+      t.id === id ? { ...t, completed: !t.completed } : t
+    ));
+  };
+
+  // Function to export calendar tasks to ICS format for Google Calendar
+  const exportToGoogleCalendar = () => {
+    if (calendarTasks.length === 0) {
+      alert('No hay tareas para exportar');
+      return;
+    }
+
+    // Build ICS content using array to avoid whitespace issues
+    const lines: string[] = [];
+    lines.push('BEGIN:VCALENDAR');
+    lines.push('VERSION:2.0');
+    lines.push('PRODID:-//FinanceAI Pro//ES');
+    lines.push('CALSCALE:GREGORIAN');
+    lines.push('METHOD:PUBLISH');
+
+    calendarTasks.forEach(task => {
+      const dateStr = task.date.replace(/-/g, '');
+      const uid = task.id + '@financeai.local';
+      const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+      const cleanDesc = task.description.replace(/[,;]/g, ' ');
+      const typeLabel = task.type === 'pago' ? 'PAGO' : task.type === 'recordatorio' ? 'RECORDATORIO' : 'TAREA';
+
+      lines.push('BEGIN:VEVENT');
+      lines.push('UID:' + uid);
+      lines.push('DTSTAMP:' + now);
+      lines.push('DTSTART;VALUE=DATE:' + dateStr);
+      lines.push('SUMMARY:' + typeLabel + ' - ' + cleanDesc);
+      lines.push('DESCRIPTION:' + cleanDesc);
+      lines.push('STATUS:CONFIRMED');
+      lines.push('BEGIN:VALARM');
+      lines.push('TRIGGER:-P1D');
+      lines.push('ACTION:DISPLAY');
+      lines.push('DESCRIPTION:Recordatorio');
+      lines.push('END:VALARM');
+      lines.push('END:VEVENT');
+    });
+
+    lines.push('END:VCALENDAR');
+
+    const icsContent = lines.join('\r\n');
+    const blob = new Blob([icsContent], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'financeai_pagos.ics';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Function to generate Google Calendar URL for a single task
+  const generateGoogleCalendarUrl = (task: CalendarTask): string => {
+    const dateStr = task.date.replace(/-/g, '');
+    const typeLabel = task.type === 'pago' ? '💳 PAGO' : task.type === 'recordatorio' ? '🔔 RECORDATORIO' : '📌 TAREA';
+    const title = encodeURIComponent(`${typeLabel}: ${task.description}`);
+    const details = encodeURIComponent(`Creado desde FinanceAI Pro\nTipo: ${task.type}\nDescripción: ${task.description}`);
+
+    // Google Calendar URL format for all-day event
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}/${dateStr}&details=${details}`;
+  };
+
+  // Function to open Google Calendar with a task
+  const addToGoogleCalendar = (task: CalendarTask) => {
+    const url = generateGoogleCalendarUrl(task);
+    window.open(url, '_blank');
+  };
+
+  // Function to add a savings project
+  const addSavingsProject = () => {
+    const amount = parseFloat(newProject.targetAmount) || 0;
+    if (!newProject.name.trim() || amount <= 0 || !newProject.targetDate) return;
+
+    const project: SavingsProject = {
+      id: `project-${Date.now()}`,
+      name: newProject.name.trim(),
+      targetAmount: amount,
+      targetDate: newProject.targetDate,
+      savedAmount: 0,
+      createdAt: new Date().toISOString()
+    };
+
+    setSavingsProjects(prev => [...prev, project]);
+    setNewProject({ name: '', targetAmount: '', targetDate: '' });
+  };
+
+  // Function to delete a savings project
+  const deleteSavingsProject = (id: string) => {
+    setSavingsProjects(prev => prev.filter(p => p.id !== id));
+  };
+
+  // Function to add a contribution to a project
+  const addProjectContribution = (id: string, amount: number) => {
+    if (amount <= 0) return;
+    setSavingsProjects(prev => prev.map(p =>
+      p.id === id ? { ...p, savedAmount: p.savedAmount + amount } : p
+    ));
+  };
+
+  // Function to generate monthly PDF report - RETRO 80s FORMAL STYLE
+  const generateMonthlyReport = () => {
+    const doc = new jsPDF();
+    const today = new Date();
+    const monthName = today.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+
+    // === APP COLOR PALETTE (matching FinanceAI Pro UI) ===
+    const colors = {
+      // Background - matches app bg-[#F8FAFC]
+      background: [248, 250, 252] as const,         // Slate-50
+      // Content area - white cards
+      contentBg: [255, 255, 255] as const,          // White
+      // Primary accent - Indigo-600
+      primaryIndigo: [79, 70, 229] as const,        // Indigo-600
+      // Primary light - Indigo-50
+      indigoLight: [238, 242, 255] as const,        // Indigo-50
+      // Text colors
+      textDark: [30, 41, 59] as const,              // Slate-800
+      textMuted: [100, 116, 139] as const,          // Slate-500
+      textLight: [148, 163, 184] as const,          // Slate-400
+      // Lines and borders
+      lineColor: [226, 232, 240] as const,          // Slate-200
+      // Success/positive - Green
+      greenSuccess: [34, 197, 94] as const,         // Green-500
+      greenDark: [22, 163, 74] as const,            // Green-600
+      // Error/negative - Red
+      redError: [239, 68, 68] as const,             // Red-500
+      redDark: [220, 38, 38] as const,              // Red-600
+      // Orange warning
+      orangeWarning: [234, 88, 12] as const,        // Orange-600
+    };
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // === LIGHT BACKGROUND (matches app) ===
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    // === WHITE CONTENT CARD ===
+    const margin = 15;
+    const contentWidth = pageWidth - margin * 2;
+    const contentHeight = pageHeight - margin * 2;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(margin, margin, contentWidth, contentHeight, 5, 5, 'F');
+    // Subtle border
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(margin, margin, contentWidth, contentHeight, 5, 5, 'S');
+
+    // === HEADER SECTION ===
+    const headerY = 25;
+
+    // Add the FinanceAI Pro logo image
+    // The logo is approximately 184x164 pixels, we scale it to fit nicely
+    const logoWidth = 45; // mm width for the logo
+    const logoHeight = 12; // mm height to maintain aspect ratio
+    doc.addImage(financeAILogo, 'PNG', 25, headerY, logoWidth, logoHeight);
+
+    // Report info on the right side
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139); // Slate-500
+    doc.text('Reporte N°:', pageWidth - 70, headerY);
+    doc.setTextColor(79, 70, 229); // Indigo-600
+    doc.text(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`, pageWidth - 40, headerY);
+
+    doc.setTextColor(100, 116, 139); // Slate-500
+    doc.text('Fecha:', pageWidth - 70, headerY + 8);
+    doc.setTextColor(79, 70, 229); // Indigo-600
+    doc.text(today.toLocaleDateString('es-CL'), pageWidth - 40, headerY + 8);
+
+    // === HORIZONTAL DIVIDER LINE ===
+    doc.setDrawColor(226, 232, 240); // Slate-200
+    doc.setLineWidth(0.5);
+    doc.line(25, 60, pageWidth - 25, 60);
+
+    // === REPORT TITLE ===
+    doc.setFontSize(14);
+    doc.setTextColor(79, 70, 229); // Indigo-600
+    doc.setFont('courier', 'bold');
+    doc.text('REPORTE MENSUAL', 30, 72);
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(30, 41, 59); // Slate-800
+    doc.text(monthName.charAt(0).toUpperCase() + monthName.slice(1), 30, 80);
+
+    // === FINANCIAL SUMMARY SECTION ===
+    const summaryY = 95;
+    const balance = totalIncome - totalExpenses;
+
+    // Section header
+    doc.setFontSize(11);
+    doc.setTextColor(100, 116, 139); // Slate-500
+    doc.text('Resumen Financiero', 30, summaryY);
+
+    // Divider
+    doc.setDrawColor(226, 232, 240); // Slate-200
+    doc.line(30, summaryY + 3, 100, summaryY + 3);
+
+    // Financial data in two columns
+    const dataY = summaryY + 15;
+    const labelX = 35;
+    const valueX = pageWidth - 50;
+
+    // Ingresos
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59); // Slate-800
+    doc.text('Ingresos del mes', labelX, dataY);
+    doc.setTextColor(34, 197, 94); // Green-500
+    doc.setFont('courier', 'bold');
+    doc.text(`$${totalIncome.toLocaleString('es-CL')}`, valueX, dataY, { align: 'right' });
+
+    // Gastos
+    doc.setFont('courier', 'normal');
+    doc.setTextColor(30, 41, 59); // Slate-800
+    doc.text('Gastos del mes', labelX, dataY + 10);
+    doc.setTextColor(239, 68, 68); // Red-500
+    doc.setFont('courier', 'bold');
+    doc.text(`$${totalExpenses.toLocaleString('es-CL')}`, valueX, dataY + 10, { align: 'right' });
+
+    // Balance line
+    doc.setDrawColor(226, 232, 240); // Slate-200
+    doc.line(labelX, dataY + 16, valueX, dataY + 16);
+
+    // Balance
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(30, 41, 59); // Slate-800
+    doc.text('Balance', labelX, dataY + 25);
+    // Green for positive, Red for negative
+    if (balance >= 0) {
+      doc.setTextColor(34, 197, 94); // Green-500
+    } else {
+      doc.setTextColor(239, 68, 68); // Red-500
+    }
+    doc.text(`$${balance.toLocaleString('es-CL')}`, valueX, dataY + 25, { align: 'right' });
+
+    // === FIXED EXPENSES SECTION ===
+    const fixedY = dataY + 45;
+    const creditTotal = creditOperations.reduce((s, c) => s + c.monthlyInstallment, 0);
+    const subsTotal = manualSubscriptions.reduce((s, c) => s + c.monthlyAmount, 0);
+    const fixedTotal = creditTotal + subsTotal;
+
+    // Section header
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(100, 116, 139); // Slate-500
+    doc.text('Gastos Fijos Mensuales', 30, fixedY);
+    doc.setDrawColor(226, 232, 240); // Slate-200
+    doc.line(30, fixedY + 3, 110, fixedY + 3);
+
+    // Table using autoTable with app styling
+    autoTable(doc, {
+      startY: fixedY + 8,
+      head: [['Descripción', 'Monto']],
+      body: [
+        [`Cuotas de créditos (${creditOperations.length})`, `$${creditTotal.toLocaleString('es-CL')}`],
+        [`Suscripciones (${manualSubscriptions.length})`, `$${subsTotal.toLocaleString('es-CL')}`],
+      ],
+      foot: [['Total gastos fijos', `$${fixedTotal.toLocaleString('es-CL')}`]],
+      theme: 'plain',
+      styles: {
+        fillColor: [255, 255, 255], // White
+        textColor: [30, 41, 59], // Slate-800
+        fontSize: 10,
+        cellPadding: 5,
+        lineColor: [226, 232, 240], // Slate-200
+        lineWidth: 0.3,
+      },
+      headStyles: {
+        fillColor: [238, 242, 255], // Indigo-50
+        textColor: [79, 70, 229], // Indigo-600
+        fontStyle: 'bold',
+        fontSize: 9,
+      },
+      footStyles: {
+        fillColor: [238, 242, 255], // Indigo-50
+        textColor: [79, 70, 229], // Indigo-600
+        fontStyle: 'bold',
+        fontSize: 10,
+      },
+      columnStyles: {
+        0: { cellWidth: 100 },
+        1: { cellWidth: 50, halign: 'right' },
+      },
+      margin: { left: 30, right: 30 },
+    });
+
+    let currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // === SAVINGS PROJECTS SECTION ===
+    if (savingsProjects.length > 0) {
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(11);
+      doc.setTextColor(100, 116, 139); // Slate-500
+      doc.text('Proyectos de Ahorro', 30, currentY);
+      doc.setDrawColor(226, 232, 240); // Slate-200
+      doc.line(30, currentY + 3, 105, currentY + 3);
+      currentY += 12;
+
+      savingsProjects.forEach((project, idx) => {
+        const progress = (project.savedAmount / project.targetAmount) * 100;
+
+        // Project name and amounts
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59); // Slate-800
+        doc.text(`${idx + 1}. ${project.name}`, 35, currentY);
+
+        doc.setTextColor(79, 70, 229); // Indigo-600
+        doc.setFontSize(9);
+        const amountText = `$${project.savedAmount.toLocaleString('es-CL')} / $${project.targetAmount.toLocaleString('es-CL')} (${progress.toFixed(1)}%)`;
+        doc.text(amountText, pageWidth - 40, currentY, { align: 'right' });
+
+        currentY += 8;
+      });
+      currentY += 5;
+    }
+
+    // === UPCOMING PAYMENTS SECTION ===
+    const upcomingTasks = calendarTasks.filter(t => {
+      if (t.completed) return false;
+      const taskDate = new Date(t.date + 'T12:00:00');
+      const sevenDays = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+      return taskDate >= today && taskDate <= sevenDays;
+    });
+
+    if (upcomingTasks.length > 0 && currentY < pageHeight - 60) {
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(11);
+      doc.setTextColor(234, 88, 12); // Orange-600 (warning)
+      doc.text('Pagos Próximos (7 días)', 30, currentY);
+      doc.setDrawColor(234, 88, 12); // Orange-600
+      doc.line(30, currentY + 3, 105, currentY + 3);
+      currentY += 12;
+
+      upcomingTasks.forEach(task => {
+        const taskDate = new Date(task.date + 'T12:00:00');
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59); // Slate-800
+        doc.text(`• ${task.description}`, 35, currentY);
+        doc.setTextColor(234, 88, 12); // Orange-600
+        doc.text(taskDate.toLocaleDateString('es-CL'), pageWidth - 40, currentY, { align: 'right' });
+        currentY += 7;
+      });
+    }
+
+    // === FOOTER ===
+    const footerY = pageHeight - 25;
+
+    // Left side - contact info style
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184); // Slate-400
+    doc.text('FinanceIA Pro', 30, footerY);
+    doc.text('www.financeai.pro', 30, footerY + 5);
+
+    // Center - timestamp
+    doc.setTextColor(148, 163, 184); // Slate-400
+    doc.text(`Generado: ${today.toLocaleDateString('es-CL')}`, pageWidth / 2, footerY, { align: 'center' });
+
+    // Right side - icon logo
+    const iconSize = 10; // mm
+    doc.addImage(financeAIIcon, 'PNG', pageWidth - 30, footerY - 2, iconSize, iconSize);
+
+    // Save PDF
+    doc.save(`reporte_financiero_${today.getFullYear()}_${String(today.getMonth() + 1).padStart(2, '0')}.pdf`);
+  };
+
   // Derived Financial Data
   // Calculate income (abonos) and expenses (cargos) from imported transactions
   const totalIncome = useMemo(() => {
@@ -444,6 +1005,106 @@ const App: React.FC = () => {
   const totalDebtBalance = useMemo(() => {
     return debts.reduce((sum, d) => sum + d.remainingBalance, 0);
   }, [debts]);
+
+  // Calculate total monthly fixed expenses (credit installments + subscriptions)
+  const totalMonthlyFixedExpenses = useMemo(() => {
+    const creditInstallments = creditOperations.reduce((sum, c) => sum + c.monthlyInstallment, 0);
+    const subscriptions = manualSubscriptions.reduce((sum, s) => sum + s.monthlyAmount, 0);
+    return creditInstallments + subscriptions;
+  }, [creditOperations, manualSubscriptions]);
+
+  // Calculate debt paydown projection (how debt decreases over time)
+  const debtPaydownProjection = useMemo(() => {
+    const months = [];
+    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const today = new Date();
+
+    // Get total pending balance from all credit operations
+    let currentDebt = creditOperations.reduce((sum, c) => sum + c.pendingBalance, 0);
+    const monthlyPayment = creditOperations.reduce((sum, c) => sum + c.monthlyInstallment, 0);
+
+    // Project for 12 months or until debt is paid off
+    for (let i = 0; i < 12; i++) {
+      const monthDate = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const monthName = monthNames[monthDate.getMonth()];
+      const year = monthDate.getFullYear().toString().slice(-2);
+
+      months.push({
+        month: `${monthName} '${year}`,
+        amount: Math.max(0, currentDebt)
+      });
+
+      currentDebt -= monthlyPayment;
+      if (currentDebt <= 0) break;
+    }
+
+    return months;
+  }, [creditOperations]);
+
+  // Calculate upcoming payments (next 7 days)
+  const upcomingPayments = useMemo(() => {
+    const today = new Date();
+    const sevenDaysFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    return calendarTasks
+      .filter(task => {
+        if (task.completed) return false;
+        const taskDate = new Date(task.date + 'T12:00:00');
+        return taskDate >= today && taskDate <= sevenDaysFromNow;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [calendarTasks]);
+
+  // Calculate cash flow projection for next 6 months
+  const cashFlowProjection = useMemo(() => {
+    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const today = new Date();
+    const months = [];
+
+    // Monthly subscriptions (these are constant)
+    const monthlySubscriptions = manualSubscriptions.reduce((s, c) => s + c.monthlyAmount, 0);
+
+    // Monthly savings for projects
+    const monthlySavings = savingsProjects
+      .filter(p => p.savedAmount < p.targetAmount)
+      .reduce((sum, p) => {
+        const targetDate = new Date(p.targetDate);
+        const monthsRemaining = Math.max(1, Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30)));
+        const remaining = p.targetAmount - p.savedAmount;
+        return sum + (remaining / monthsRemaining);
+      }, 0);
+
+    // Estimate monthly income and variable expenses from transactions
+    const avgMonthlyIncome = totalIncome > 0 ? totalIncome : 0;
+    const avgMonthlyExpenses = totalExpenses > 0 ? totalExpenses : 0;
+
+    for (let i = 0; i < 6; i++) {
+      const monthDate = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const monthName = monthNames[monthDate.getMonth()];
+      const year = monthDate.getFullYear().toString().slice(-2);
+
+      // Calculate credit payments for this specific month
+      // Only include credits that still have remaining installments after 'i' months
+      const creditPaymentsForMonth = creditOperations.reduce((sum, credit) => {
+        // If credit has more remaining installments than months passed, include it
+        if (credit.remainingInstallments > i) {
+          return sum + credit.monthlyInstallment;
+        }
+        return sum; // Credit will be paid off before this month
+      }, 0);
+
+      const totalGastos = avgMonthlyExpenses + creditPaymentsForMonth + monthlySubscriptions + monthlySavings;
+
+      months.push({
+        month: `${monthName} '${year}`,
+        ingresos: Math.round(avgMonthlyIncome),
+        gastos: Math.round(totalGastos),
+        balance: Math.round(avgMonthlyIncome - totalGastos)
+      });
+    }
+
+    return months;
+  }, [creditOperations, manualSubscriptions, savingsProjects, totalIncome, totalExpenses]);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -541,9 +1202,12 @@ const App: React.FC = () => {
           <nav className="space-y-2 flex-grow">
             {[
               { icon: LayoutDashboard, label: 'Resumen', tab: 'resumen' as TabType },
-              { icon: CreditCard, label: 'Categorizar', tab: 'cuentas' as TabType },
-              { icon: PieChartIcon, label: 'Presupuesto', tab: 'presupuesto' as TabType },
+              { icon: Tag, label: 'Movimientos', tab: 'movimientos' as TabType },
+              { icon: CreditCard, label: 'Presupuesto', tab: 'cuentas' as TabType },
+              { icon: PieChartIcon, label: 'Análisis', tab: 'presupuesto' as TabType },
               { icon: Wallet, label: 'Créditos', tab: 'creditos' as TabType },
+              { icon: Calendar, label: 'Calendario', tab: 'calendario' as TabType },
+              { icon: Target, label: 'Proyectos', tab: 'proyectos' as TabType },
               { icon: Clock, label: 'Historial', tab: 'historial' as TabType },
             ].map((item) => (
               <button
@@ -552,7 +1216,12 @@ const App: React.FC = () => {
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === item.tab ? 'bg-indigo-50 text-indigo-600 font-semibold shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
               >
                 <item.icon size={20} />
-                {item.label}
+                <span className="flex-1 text-left">{item.label}</span>
+                {item.tab === 'calendario' && upcomingPayments.length > 0 && (
+                  <span className="px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-full animate-pulse">
+                    {upcomingPayments.length}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -660,12 +1329,208 @@ const App: React.FC = () => {
                     <div className="p-3 bg-red-50 text-red-600 rounded-2xl">
                       <CreditCard size={24} />
                     </div>
-                    <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg">Activos</span>
+                    <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg">Mensual</span>
                   </div>
-                  <p className="text-slate-500 text-sm font-medium">Deuda Total Pendiente</p>
-                  <h2 className="text-2xl font-bold text-slate-900">${totalDebtBalance.toLocaleString('es-CL')}</h2>
+                  <p className="text-slate-500 text-sm font-medium">Gastos Fijos Mensuales</p>
+                  <h2 className="text-2xl font-bold text-slate-900">${totalMonthlyFixedExpenses.toLocaleString('es-CL')}</h2>
+                  <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Cuotas créditos ({creditOperations.length})</span>
+                      <span className="font-medium text-slate-700">${creditOperations.reduce((s, c) => s + c.monthlyInstallment, 0).toLocaleString('es-CL')}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Suscripciones ({manualSubscriptions.length})</span>
+                      <span className="font-medium text-slate-700">${manualSubscriptions.reduce((s, c) => s + c.monthlyAmount, 0).toLocaleString('es-CL')}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* Upcoming Payments Alert */}
+              {upcomingPayments.length > 0 && (
+                <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-3xl p-6 border border-orange-200 shadow-sm mb-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl animate-pulse">
+                        <Clock size={24} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-orange-800 text-lg">⚠️ Pagos Próximos</h3>
+                        <p className="text-sm text-orange-600">{upcomingPayments.length} pago{upcomingPayments.length !== 1 ? 's' : ''} en los próximos 7 días</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('calendario')}
+                      className="px-4 py-2 bg-orange-100 text-orange-700 rounded-xl hover:bg-orange-200 transition-all text-sm font-medium"
+                    >
+                      Ver Calendario
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {upcomingPayments.slice(0, 3).map(task => {
+                      const taskDate = new Date(task.date + 'T12:00:00');
+                      const daysUntil = Math.ceil((taskDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                      return (
+                        <div key={task.id} className="bg-white/80 rounded-xl p-4 flex items-center gap-3">
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg ${task.type === 'pago' ? 'bg-red-100' : task.type === 'recordatorio' ? 'bg-amber-100' : 'bg-blue-100'
+                            }`}>
+                            {task.type === 'pago' ? '💳' : task.type === 'recordatorio' ? '🔔' : '📌'}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-slate-800 text-sm">{task.description}</p>
+                            <p className="text-xs text-orange-600 font-medium">
+                              {daysUntil === 0 ? '¡Hoy!' : daysUntil === 1 ? 'Mañana' : `En ${daysUntil} días`}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Cash Flow Projection Chart + Export Button */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                        <TrendingUp size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900">Flujo de Caja Proyectado</h3>
+                        <p className="text-xs text-slate-500">Próximos 6 meses</p>
+                      </div>
+                    </div>
+                  </div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <AreaChart data={cashFlowProjection}>
+                      <defs>
+                        <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} />
+                      <YAxis stroke="#94a3b8" fontSize={12} tickFormatter={(v) => `$${(v / 1000000).toFixed(1)}M`} />
+                      <Tooltip
+                        formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, '']}
+                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
+                      />
+                      <Area type="monotone" dataKey="ingresos" stroke="#22c55e" strokeWidth={2} fillOpacity={1} fill="url(#colorIngresos)" name="Ingresos" />
+                      <Area type="monotone" dataKey="gastos" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorGastos)" name="Gastos" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  <div className="flex justify-center gap-6 mt-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <span className="text-xs text-slate-600">Ingresos</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <span className="text-xs text-slate-600">Gastos Proyectados</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Export Report Card */}
+                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-lg flex flex-col justify-between">
+                  <div>
+                    <div className="p-3 bg-white/20 rounded-2xl w-fit mb-4">
+                      <FileText size={28} />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">Reporte Mensual</h3>
+                    <p className="text-indigo-100 text-sm mb-4">
+                      Descarga un PDF con el resumen completo de tus finanzas del mes, incluyendo gastos, créditos y proyectos.
+                    </p>
+                  </div>
+                  <button
+                    onClick={generateMonthlyReport}
+                    className="w-full py-3 bg-white text-indigo-600 rounded-xl font-semibold hover:bg-indigo-50 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Download size={18} />
+                    Exportar PDF
+                  </button>
+                </div>
+              </div>
+
+              {/* Imported Files Management */}
+              {(importedFiles.length > 0 || transactions.length > 0) && (
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm mb-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
+                        <FileSpreadsheet size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900">Gestión de Datos</h3>
+                        <p className="text-xs text-slate-500">
+                          {importedFiles.length > 0
+                            ? `${importedFiles.length} archivo${importedFiles.length !== 1 ? 's' : ''} • ${transactions.length} transacciones`
+                            : `${transactions.length} transacciones cargadas`
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    {/* Clear all button */}
+                    <button
+                      onClick={() => {
+                        if (window.confirm('¿Estás seguro de que deseas eliminar TODAS las transacciones? Esta acción no se puede deshacer.')) {
+                          clearAllTransactions();
+                        }
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-all flex items-center gap-2"
+                    >
+                      <Trash2 size={16} />
+                      Limpiar Todo
+                    </button>
+                  </div>
+
+                  {/* Warning for orphaned transactions */}
+                  {importedFiles.length === 0 && transactions.length > 0 && (
+                    <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                      <p className="text-sm text-amber-700">
+                        ⚠️ Hay transacciones sin cartola asociada. Usa "Limpiar Todo" para reiniciar o importa nuevas cartolas.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* File list */}
+                  {importedFiles.length > 0 && (
+                    <div className="space-y-3">
+                      {importedFiles.map((file) => (
+                        <div key={file.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl group hover:bg-slate-100 transition-colors">
+                          <div className="flex items-center gap-4">
+                            <div className={`p-2 rounded-xl ${file.type === 'excel' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                              {file.type === 'excel' ? <FileSpreadsheet size={18} /> : <FileText size={18} />}
+                            </div>
+                            <div>
+                              <p className="font-medium text-slate-800 text-sm">{file.name}</p>
+                              <div className="flex items-center gap-3 text-xs text-slate-500">
+                                <span>{file.transactionCount} transacciones</span>
+                                <span>•</span>
+                                <span>{new Date(file.importDate).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => deleteImportedFile(file.id)}
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                            title="Eliminar cartola y sus transacciones"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Bento Grid Layout */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 auto-rows-auto">
@@ -685,46 +1550,74 @@ const App: React.FC = () => {
                 </BentoCard>
 
                 {/* Projection Area Chart - Col 2-3 */}
-                <BentoCard title="Proyección de Flujo de Caja" subtitle="Próximos 6 meses de cuotas obligatorias" className="md:col-span-2">
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={projection}>
-                        <defs>
-                          <linearGradient id="colorAmt" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1} />
-                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(v) => `$${v / 1000}k`} />
-                        <Tooltip
-                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                          formatter={(value: number) => [`$${value.toLocaleString()}`, 'Compromiso']}
-                        />
-                        <Area type="monotone" dataKey="amount" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorAmt)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
+                <BentoCard title="Proyección de Deuda" subtitle="Reducción del saldo pendiente con pagos mensuales" className="md:col-span-2">
+                  {creditOperations.length === 0 ? (
+                    <div className="h-64 flex items-center justify-center text-slate-400">
+                      <div className="text-center">
+                        <TrendingUp size={40} className="mx-auto mb-3 opacity-50" />
+                        <p className="text-sm">No hay operaciones a crédito</p>
+                        <p className="text-xs mt-1">Agrégalas en la pestaña Créditos</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={debtPaydownProjection}>
+                          <defs>
+                            <linearGradient id="colorDebt" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
+                              <stop offset="95%" stopColor="#22c55e" stopOpacity={0.1} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                            formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, 'Saldo Pendiente']}
+                          />
+                          <Area type="monotone" dataKey="amount" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorDebt)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </BentoCard>
 
                 {/* Subscriptions Widget - Col 1 */}
-                <BentoCard title="Suscripciones Detectadas" subtitle="Pagos recurrentes inteligentes" icon={<Repeat size={18} className="text-indigo-600" />}>
+                <BentoCard title="Suscripciones Activas" subtitle="Pagos mensuales registrados" icon={<Repeat size={18} className="text-indigo-600" />}>
                   <div className="space-y-4">
-                    {subscriptions.map(sub => (
-                      <div key={sub.description} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 group hover:bg-slate-100 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center border border-slate-200 text-xs font-bold text-slate-400 group-hover:text-indigo-600 group-hover:border-indigo-100">
-                            {sub.description.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{sub.description}</p>
-                            <p className="text-[10px] text-slate-500 uppercase tracking-wide">{sub.frequency}</p>
-                          </div>
-                        </div>
-                        <p className="text-sm font-bold text-slate-900">${sub.amount.toLocaleString('es-CL')}</p>
+                    {manualSubscriptions.length === 0 ? (
+                      <div className="text-center py-6 text-slate-400">
+                        <Repeat size={32} className="mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No hay suscripciones registradas</p>
+                        <p className="text-xs mt-1">Agrégalas en la pestaña Créditos</p>
                       </div>
-                    ))}
+                    ) : (
+                      manualSubscriptions.map(sub => (
+                        <div key={sub.id} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 group hover:bg-slate-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center border border-slate-200 text-xs font-bold text-slate-400 group-hover:text-indigo-600 group-hover:border-indigo-100">
+                              {sub.description.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-800">{sub.description}</p>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wide">MENSUAL</p>
+                            </div>
+                          </div>
+                          <p className="text-sm font-bold text-slate-900">${sub.monthlyAmount.toLocaleString('es-CL')}</p>
+                        </div>
+                      ))
+                    )}
+                    {manualSubscriptions.length > 0 && (
+                      <div className="pt-3 border-t border-slate-100">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-500">Total mensual</span>
+                          <span className="text-sm font-bold text-indigo-600">
+                            ${manualSubscriptions.reduce((sum, s) => sum + s.monthlyAmount, 0).toLocaleString('es-CL')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </BentoCard>
 
@@ -746,40 +1639,136 @@ const App: React.FC = () => {
                   </div>
                 </BentoCard>
 
-                {/* Snowball Simulator - Col 3 */}
-                <BentoCard title="Simulador Snowball" subtitle="Acelera el pago de tus deudas" icon={<TrendingUp size={18} className="text-green-600" />}>
-                  <SnowballSimulator
-                    totalDebt={totalDebtBalance}
-                    monthlyInstallments={debts.reduce((acc, d) => acc + d.monthlyValue, 0)}
-                  />
+                {/* Pagos del Mes - Col 3 */}
+                <BentoCard title="Pagos del Mes" subtitle="Tareas programadas del mes" icon={<Calendar size={18} className="text-indigo-600" />}>
+                  <div className="space-y-4">
+                    {/* Month Selector */}
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => {
+                          const newDate = new Date(currentMonth);
+                          newDate.setMonth(newDate.getMonth() - 1);
+                          setCurrentMonth(newDate);
+                        }}
+                        className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                      >
+                        <ChevronLeft size={16} className="text-slate-500" />
+                      </button>
+                      <span className="text-sm font-semibold text-slate-700 capitalize">
+                        {currentMonth.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
+                      </span>
+                      <button
+                        onClick={() => {
+                          const newDate = new Date(currentMonth);
+                          newDate.setMonth(newDate.getMonth() + 1);
+                          setCurrentMonth(newDate);
+                        }}
+                        className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors rotate-180"
+                      >
+                        <ChevronLeft size={16} className="text-slate-500" />
+                      </button>
+                    </div>
+
+                    {/* Tasks List */}
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {calendarTasks
+                        .filter(t => {
+                          const taskDate = new Date(t.date + 'T12:00:00');
+                          return taskDate.getMonth() === currentMonth.getMonth() && taskDate.getFullYear() === currentMonth.getFullYear();
+                        })
+                        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                        .length === 0 ? (
+                        <div className="text-center py-4 text-slate-400">
+                          <Calendar size={24} className="mx-auto mb-2 opacity-50" />
+                          <p className="text-xs">Sin pagos programados</p>
+                        </div>
+                      ) : (
+                        calendarTasks
+                          .filter(t => {
+                            const taskDate = new Date(t.date + 'T12:00:00');
+                            return taskDate.getMonth() === currentMonth.getMonth() && taskDate.getFullYear() === currentMonth.getFullYear();
+                          })
+                          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                          .map(task => (
+                            <div key={task.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl">
+                              <div className="text-center min-w-[36px]">
+                                <p className="text-lg font-bold text-indigo-600">
+                                  {new Date(task.date + 'T12:00:00').getDate()}
+                                </p>
+                              </div>
+                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs ${task.type === 'pago' ? 'bg-red-100' :
+                                task.type === 'recordatorio' ? 'bg-amber-100' : 'bg-blue-100'
+                                }`}>
+                                {task.type === 'pago' ? '💳' : task.type === 'recordatorio' ? '🔔' : '📌'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-slate-700 truncate">{task.description}</p>
+                                <p className="text-[10px] text-slate-400 capitalize">{task.type}</p>
+                              </div>
+                            </div>
+                          ))
+                      )}
+                    </div>
+
+                    {/* Summary */}
+                    <div className="pt-2 border-t border-slate-100">
+                      <div className="flex justify-between text-xs text-slate-500">
+                        <span>Total programados:</span>
+                        <span className="font-semibold text-indigo-600">
+                          {calendarTasks.filter(t => {
+                            const taskDate = new Date(t.date + 'T12:00:00');
+                            return taskDate.getMonth() === currentMonth.getMonth() && taskDate.getFullYear() === currentMonth.getFullYear();
+                          }).length} pagos
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </BentoCard>
 
                 {/* Debt Timeline - Full Width Row */}
-                <BentoCard title="Línea de Tiempo de Deudas" subtitle="Calendario proyectado de fin de pagos" className="md:col-span-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {debts.map((debt, i) => (
-                      <div key={i} className="relative p-5 rounded-2xl border border-slate-100 bg-white overflow-hidden group">
-                        <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-                        <div className="flex justify-between items-start mb-3">
-                          <h4 className="font-bold text-slate-800">{debt.description}</h4>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">CUOTA {debt.currentInstallment}/{debt.totalInstallments}</span>
-                        </div>
-                        <div className="space-y-2 mb-4">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-slate-500">Saldo Pendiente</span>
-                            <span className="font-semibold text-slate-800">${debt.remainingBalance.toLocaleString('es-CL')}</span>
+                <BentoCard title="Operaciones a Crédito" subtitle="Calendario proyectado de fin de pagos" className="md:col-span-3">
+                  {creditOperations.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">
+                      <CreditCard size={40} className="mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">No hay operaciones a crédito registradas</p>
+                      <p className="text-xs mt-1">Agrégalas en la pestaña Créditos</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {creditOperations.map((credit) => {
+                        // Calculate end date based on remaining installments
+                        const endDate = new Date();
+                        endDate.setMonth(endDate.getMonth() + credit.remainingInstallments);
+                        const endDateStr = endDate.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+                        const progress = (credit.paidInstallments / credit.totalInstallments) * 100;
+
+                        return (
+                          <div key={credit.id} className="relative p-5 rounded-2xl border border-slate-100 bg-white overflow-hidden group">
+                            <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
+                            <div className="flex justify-between items-start mb-3">
+                              <h4 className="font-bold text-slate-800">{credit.description}</h4>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+                                CUOTA {credit.paidInstallments}/{credit.totalInstallments}
+                              </span>
+                            </div>
+                            <div className="space-y-2 mb-4">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-slate-500">Saldo Pendiente</span>
+                                <span className="font-semibold text-slate-800">${credit.pendingBalance.toLocaleString('es-CL')}</span>
+                              </div>
+                              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${progress}%` }}></div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                              <Clock size={12} />
+                              <span>Finaliza en: <strong className="text-slate-800">{endDateStr}</strong></span>
+                            </div>
                           </div>
-                          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${(debt.currentInstallment / debt.totalInstallments) * 100}%` }}></div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded-xl border border-slate-100">
-                          <Clock size={12} />
-                          <span>Finaliza en: <strong className="text-slate-800">{debt.endDate}</strong></span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </BentoCard>
               </div>
 
@@ -844,6 +1833,240 @@ const App: React.FC = () => {
                 </div>
               </div>
             </>
+          )}
+
+          {activeTab === 'movimientos' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Clasificar Movimientos</h2>
+                  <p className="text-slate-500 text-sm mt-1">Asigna una categoría a cada transacción</p>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                      type="text"
+                      placeholder="Buscar movimiento..."
+                      className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-64"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Category Legend */}
+              <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                <p className="text-xs text-slate-500 mb-3 font-medium">CATEGORÍAS DISPONIBLES</p>
+                <div className="flex flex-wrap gap-2">
+                  {EXPENSE_CATEGORIES.map(cat => (
+                    <div key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 rounded-lg">
+                      <div className={`w-2.5 h-2.5 rounded-full ${cat.color}`}></div>
+                      <span className="text-xs font-medium text-slate-600">{cat.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Transactions List */}
+              {transactions.length === 0 ? (
+                <div className="bg-white rounded-3xl p-12 border border-slate-100 text-center">
+                  <Tag size={48} className="mx-auto mb-4 text-slate-300" />
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">No hay movimientos</h3>
+                  <p className="text-slate-500 text-sm">Importa una cartola para comenzar a clasificar</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
+                  <div className="max-h-[600px] overflow-y-auto">
+                    {filteredTransactions
+                      .filter(t => !t.isIncome) // Only show expenses
+                      .map((t) => {
+                        const currentCategory = EXPENSE_CATEGORIES.find(c => c.name === t.subCategory);
+
+                        return (
+                          <div key={t.id} className="flex items-center justify-between p-4 border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                            {/* Transaction Info */}
+                            <div className="flex-1 min-w-0 mr-4">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${currentCategory ? currentCategory.color : 'bg-slate-200'}`}>
+                                  {currentCategory ? (
+                                    <currentCategory.icon size={20} className="text-white" />
+                                  ) : (
+                                    <Tag size={20} className="text-slate-400" />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-medium text-slate-800 truncate">{t.description}</p>
+                                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                                    <span>{new Date(t.date).toLocaleDateString('es-CL')}</span>
+                                    <span>•</span>
+                                    <span className="font-semibold text-slate-700">${t.amount.toLocaleString('es-CL')}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Category Selector */}
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={currentCategory?.name || ''}
+                                onChange={(e) => updateTransactionExpenseCategory(t.id, e.target.value)}
+                                className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all cursor-pointer ${currentCategory
+                                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                                  : 'bg-amber-50 border-amber-200 text-amber-700'
+                                  }`}
+                              >
+                                <option value="">Sin categoría</option>
+                                {EXPENSE_CATEGORIES.map(cat => (
+                                  <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                ))}
+                              </select>
+                              {currentCategory && (
+                                <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                                  <Check size={14} className="text-green-600" />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Summary Stats */}
+              {transactions.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                    <p className="text-xs text-slate-500 mb-1">Total Movimientos</p>
+                    <p className="text-xl font-bold text-slate-900">{transactions.filter(t => !t.isIncome).length}</p>
+                  </div>
+                  <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                    <p className="text-xs text-slate-500 mb-1">Clasificados</p>
+                    <p className="text-xl font-bold text-green-600">
+                      {transactions.filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory)).length}
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                    <p className="text-xs text-slate-500 mb-1">Sin Clasificar</p>
+                    <p className="text-xl font-bold text-amber-600">
+                      {transactions.filter(t => !t.isIncome && !EXPENSE_CATEGORIES.some(c => c.name === t.subCategory)).length}
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                    <p className="text-xs text-slate-500 mb-1">Progreso</p>
+                    <p className="text-xl font-bold text-indigo-600">
+                      {transactions.filter(t => !t.isIncome).length > 0
+                        ? Math.round((transactions.filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory)).length / transactions.filter(t => !t.isIncome).length) * 100)
+                        : 0}%
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Pie Chart - Category Distribution */}
+              {transactions.filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory)).length > 0 && (
+                <div className="bg-white rounded-3xl p-6 border border-slate-100">
+                  <h3 className="font-bold text-lg text-slate-900 mb-2">Distribución por Categoría</h3>
+                  <p className="text-sm text-slate-500 mb-6">Gastos clasificados por tipo</p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Pie Chart */}
+                    <div className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={(() => {
+                              const categoryTotals: Record<string, number> = {};
+                              transactions
+                                .filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory))
+                                .forEach(t => {
+                                  categoryTotals[t.subCategory] = (categoryTotals[t.subCategory] || 0) + t.amount;
+                                });
+                              return Object.entries(categoryTotals).map(([name, value]) => ({
+                                name,
+                                value,
+                                color: EXPENSE_CATEGORIES.find(c => c.name === name)?.color.replace('bg-', '#').replace('-500', '') || '#64748b'
+                              }));
+                            })()}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={100}
+                            paddingAngle={2}
+                            dataKey="value"
+                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            labelLine={false}
+                          >
+                            {(() => {
+                              const categoryTotals: Record<string, number> = {};
+                              transactions
+                                .filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory))
+                                .forEach(t => {
+                                  categoryTotals[t.subCategory] = (categoryTotals[t.subCategory] || 0) + t.amount;
+                                });
+                              const COLORS = ['#22c55e', '#ef4444', '#a855f7', '#3b82f6', '#06b6d4', '#6366f1', '#ec4899', '#f97316', '#14b8a6', '#f59e0b', '#8b5cf6', '#f43f5e', '#d946ef', '#64748b'];
+                              return Object.keys(categoryTotals).map((_, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ));
+                            })()}
+                          </Pie>
+                          <Tooltip
+                            formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, 'Monto']}
+                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Legend with amounts */}
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500 font-medium mb-3">DETALLE POR CATEGORÍA</p>
+                      {(() => {
+                        const categoryTotals: Record<string, number> = {};
+                        transactions
+                          .filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory))
+                          .forEach(t => {
+                            categoryTotals[t.subCategory] = (categoryTotals[t.subCategory] || 0) + t.amount;
+                          });
+                        const total = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
+                        const COLORS = ['#22c55e', '#ef4444', '#a855f7', '#3b82f6', '#06b6d4', '#6366f1', '#ec4899', '#f97316', '#14b8a6', '#f59e0b', '#8b5cf6', '#f43f5e', '#d946ef', '#64748b'];
+
+                        return Object.entries(categoryTotals)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([name, value], index) => (
+                            <div key={name} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className="w-3 h-3 rounded-full"
+                                  style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                                ></div>
+                                <span className="text-sm font-medium text-slate-700">{name}</span>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-bold text-slate-900">${value.toLocaleString('es-CL')}</p>
+                                <p className="text-xs text-slate-500">{((value / total) * 100).toFixed(1)}%</p>
+                              </div>
+                            </div>
+                          ));
+                      })()}
+
+                      {/* Total */}
+                      <div className="flex items-center justify-between p-3 bg-indigo-50 rounded-xl border border-indigo-100 mt-4">
+                        <span className="text-sm font-bold text-indigo-700">Total Clasificado</span>
+                        <span className="text-lg font-bold text-indigo-700">
+                          ${transactions
+                            .filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory))
+                            .reduce((sum, t) => sum + t.amount, 0)
+                            .toLocaleString('es-CL')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {activeTab === 'cuentas' && (
@@ -1037,42 +2260,104 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Resumen vs Gastos Reales */}
+              {/* Resumen vs Gastos Reales - Regla 50/30/20 */}
               <div className="bg-white rounded-3xl p-6 border border-slate-100">
-                <h3 className="font-bold text-lg text-slate-900 mb-4">Comparación: Presupuesto vs Gastos Reales</h3>
+                <h3 className="font-bold text-lg text-slate-900 mb-2">Comparación: Presupuesto vs Gastos Reales</h3>
+                <p className="text-sm text-slate-500 mb-4">Basado en la regla 50/30/20</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-3">
-                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
-                      <span className="text-slate-600 font-medium">Tus Gastos Totales</span>
-                      <span className="text-lg font-bold text-slate-900">${totalExpenses.toLocaleString('es-CL')}</span>
+                    {/* Necesidades - Meta 50% - AZUL (igual que Presupuesto) */}
+                    <div className={`p-3 rounded-xl ${health.needPct <= 50 ? 'bg-blue-50' : 'bg-red-50'}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
+                          <Target size={14} />
+                        </div>
+                        <span className="text-slate-700 font-medium">Necesidades (Meta 50%)</span>
+                        <span className={`ml-auto text-sm font-bold ${health.needPct <= 50 ? 'text-blue-600' : 'text-red-600'}`}>
+                          {health.needPct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Real: ${(health.totals[CategoryType.NEED] || 0).toLocaleString('es-CL')}</span>
+                        <span className="text-slate-500">Límite: ${(totalIncome * 0.50).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                      </div>
+                      <div className="w-full bg-slate-200 h-2 rounded-full mt-2">
+                        <div
+                          className={`h-full rounded-full transition-all ${health.needPct <= 50 ? 'bg-blue-500' : 'bg-red-500'}`}
+                          style={{ width: `${Math.min(100, (health.needPct / 50) * 100)}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
-                      <span className="text-slate-600 font-medium">Presupuesto Máximo (80%)</span>
-                      <span className="text-lg font-bold text-slate-900">${(totalIncome * 0.80).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+
+                    {/* Deseos - Meta 30% - MORADO (igual que Presupuesto) */}
+                    <div className={`p-3 rounded-xl ${health.wantPct <= 30 ? 'bg-purple-50' : 'bg-orange-50'}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="p-1.5 bg-purple-100 text-purple-600 rounded-lg">
+                          <Target size={14} />
+                        </div>
+                        <span className="text-slate-700 font-medium">Deseos (Meta 30%)</span>
+                        <span className={`ml-auto text-sm font-bold ${health.wantPct <= 30 ? 'text-purple-600' : 'text-orange-600'}`}>
+                          {health.wantPct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Real: ${(health.totals[CategoryType.WANT] || 0).toLocaleString('es-CL')}</span>
+                        <span className="text-slate-500">Límite: ${(totalIncome * 0.30).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                      </div>
+                      <div className="w-full bg-slate-200 h-2 rounded-full mt-2">
+                        <div
+                          className={`h-full rounded-full transition-all ${health.wantPct <= 30 ? 'bg-purple-500' : 'bg-orange-500'}`}
+                          style={{ width: `${Math.min(100, (health.wantPct / 30) * 100)}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className={`flex justify-between items-center p-3 rounded-xl ${totalExpenses <= totalIncome * 0.80 ? 'bg-green-50' : 'bg-red-50'}`}>
-                      <span className={`font-medium ${totalExpenses <= totalIncome * 0.80 ? 'text-green-600' : 'text-red-600'}`}>
-                        {totalExpenses <= totalIncome * 0.80 ? '✅ Dentro del presupuesto' : '⚠️ Excediste el presupuesto'}
-                      </span>
-                      <span className={`text-lg font-bold ${totalExpenses <= totalIncome * 0.80 ? 'text-green-700' : 'text-red-700'}`}>
-                        ${Math.abs((totalIncome * 0.80) - totalExpenses).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
-                      </span>
-                    </div>
+
+                    {/* Ahorro - Meta 20% - VERDE (igual que Presupuesto) */}
+                    {(() => {
+                      const savingsAmount = health.totals[CategoryType.SAVINGS] || 0;
+                      const savingsPct = (savingsAmount / (totalIncome || 1)) * 100;
+                      return (
+                        <div className={`p-3 rounded-xl ${savingsPct >= 20 ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="p-1.5 bg-green-100 text-green-600 rounded-lg">
+                              <Target size={14} />
+                            </div>
+                            <span className="text-slate-700 font-medium">Ahorro (Meta 20%)</span>
+                            <span className={`ml-auto text-sm font-bold ${savingsPct >= 20 ? 'text-green-600' : 'text-yellow-600'}`}>
+                              {savingsPct.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Real: ${savingsAmount.toLocaleString('es-CL')}</span>
+                            <span className="text-slate-500">Meta: ${(totalIncome * 0.20).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-2 rounded-full mt-2">
+                            <div
+                              className={`h-full rounded-full transition-all ${savingsPct >= 20 ? 'bg-green-500' : 'bg-yellow-500'}`}
+                              style={{ width: `${Math.min(100, (savingsAmount / (totalIncome * 0.20 || 1)) * 100)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
-                    <ResponsiveContainer width="100%" height={150}>
+                    <ResponsiveContainer width="100%" height={200}>
                       <BarChart data={[
-                        { name: 'Gastos', value: totalExpenses, fill: '#6366f1' },
-                        { name: 'Límite 80%', value: totalIncome * 0.80, fill: '#10b981' }
+                        { name: 'Necesidades', real: health.totals[CategoryType.NEED] || 0, meta: totalIncome * 0.50 },
+                        { name: 'Deseos', real: health.totals[CategoryType.WANT] || 0, meta: totalIncome * 0.30 },
+                        { name: 'Ahorro', real: health.totals[CategoryType.SAVINGS] || 0, meta: totalIncome * 0.20 },
                       ]} layout="vertical">
                         <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 12 }} />
-                        <Tooltip formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, 'Monto']} />
-                        <Bar dataKey="value" radius={[0, 8, 8, 0]}>
-                          {[0, 1].map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={index === 0 ? '#6366f1' : '#10b981'} />
-                          ))}
+                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={85} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, '']} />
+                        <Legend verticalAlign="top" height={36} />
+                        <Bar dataKey="real" name="Gasto Real" radius={[0, 4, 4, 0]}>
+                          <Cell fill="#3b82f6" />
+                          <Cell fill="#a855f7" />
+                          <Cell fill="#22c55e" />
                         </Bar>
+                        <Bar dataKey="meta" name="Meta 50/30/20" fill="#94a3b8" radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1324,6 +2609,439 @@ const App: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'calendario' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Calendario de Pagos</h2>
+                  <p className="text-slate-500 text-sm mt-1">Programa tus pagos y recordatorios</p>
+                </div>
+                <button
+                  onClick={exportToGoogleCalendar}
+                  disabled={calendarTasks.length === 0}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download size={18} />
+                  Exportar a Google Calendar
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Calendar */}
+                <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-slate-100">
+                  {/* Month Navigation */}
+                  <div className="flex items-center justify-between mb-6">
+                    <button
+                      onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+                      className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+                    >
+                      <ChevronLeft size={20} className="text-slate-600" />
+                    </button>
+                    <h3 className="text-lg font-bold text-slate-800 capitalize">
+                      {currentMonth.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
+                    </h3>
+                    <button
+                      onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+                      className="p-2 hover:bg-slate-100 rounded-xl transition-colors rotate-180"
+                    >
+                      <ChevronLeft size={20} className="text-slate-600" />
+                    </button>
+                  </div>
+
+                  {/* Days of Week Header */}
+                  <div className="grid grid-cols-7 gap-1 mb-2">
+                    {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(day => (
+                      <div key={day} className="text-center text-xs font-semibold text-slate-500 py-2">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Calendar Grid */}
+                  <div className="grid grid-cols-7 gap-1">
+                    {(() => {
+                      const year = currentMonth.getFullYear();
+                      const month = currentMonth.getMonth();
+                      const firstDay = new Date(year, month, 1);
+                      const lastDay = new Date(year, month + 1, 0);
+                      const startPadding = (firstDay.getDay() + 6) % 7; // Adjust for Monday start
+                      const days = [];
+
+                      // Empty cells for padding
+                      for (let i = 0; i < startPadding; i++) {
+                        days.push(<div key={`pad-${i}`} className="h-12"></div>);
+                      }
+
+                      // Actual days
+                      for (let day = 1; day <= lastDay.getDate(); day++) {
+                        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        const tasksForDay = calendarTasks.filter(t => t.date === dateStr);
+                        const isToday = new Date().toISOString().split('T')[0] === dateStr;
+                        const isSelected = selectedDate === dateStr;
+
+                        days.push(
+                          <button
+                            key={day}
+                            onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                            className={`h-12 rounded-xl flex flex-col items-center justify-center transition-all relative ${isSelected
+                              ? 'bg-indigo-600 text-white'
+                              : isToday
+                                ? 'bg-indigo-50 text-indigo-600 font-bold'
+                                : 'hover:bg-slate-100 text-slate-700'
+                              }`}
+                          >
+                            <span className="text-sm font-medium">{day}</span>
+                            {tasksForDay.length > 0 && (
+                              <div className="flex gap-0.5 mt-0.5">
+                                {tasksForDay.slice(0, 3).map((t, i) => (
+                                  <div
+                                    key={i}
+                                    className={`w-1.5 h-1.5 rounded-full ${t.type === 'pago' ? 'bg-red-500' : t.type === 'recordatorio' ? 'bg-amber-500' : 'bg-blue-500'
+                                      } ${isSelected ? 'opacity-80' : ''}`}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      }
+
+                      return days;
+                    })()}
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex gap-4 mt-6 pt-4 border-t border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <span className="text-xs text-slate-600">Pago</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                      <span className="text-xs text-slate-600">Recordatorio</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                      <span className="text-xs text-slate-600">Otro</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Add Task Panel */}
+                <div className="space-y-6">
+                  {/* Add Task Form */}
+                  <div className="bg-white rounded-3xl p-6 border border-slate-100">
+                    <h3 className="font-bold text-slate-900 mb-4">
+                      {selectedDate
+                        ? `Agregar tarea - ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })}`
+                        : 'Selecciona un día'
+                      }
+                    </h3>
+
+                    {selectedDate ? (
+                      <div className="space-y-4">
+                        <input
+                          type="text"
+                          placeholder="Ej: Pago tarjeta de crédito"
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          value={newTask.description}
+                          onChange={(e) => setNewTask(prev => ({ ...prev, description: e.target.value }))}
+                        />
+                        <select
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          value={newTask.type}
+                          onChange={(e) => setNewTask(prev => ({ ...prev, type: e.target.value as 'pago' | 'recordatorio' | 'otro' }))}
+                        >
+                          <option value="pago">💳 Pago</option>
+                          <option value="recordatorio">🔔 Recordatorio</option>
+                          <option value="otro">📌 Otro</option>
+                        </select>
+                        <button
+                          onClick={addCalendarTask}
+                          disabled={!newTask.description.trim()}
+                          className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          <Plus size={18} />
+                          Agregar Tarea
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-slate-400">
+                        <Calendar size={40} className="mx-auto mb-3 opacity-50" />
+                        <p className="text-sm">Haz clic en un día del calendario para agregar una tarea</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tasks for selected date */}
+                  {selectedDate && calendarTasks.filter(t => t.date === selectedDate).length > 0 && (
+                    <div className="bg-white rounded-3xl p-6 border border-slate-100">
+                      <h3 className="font-bold text-slate-900 mb-4">Tareas del día</h3>
+                      <div className="space-y-2">
+                        {calendarTasks
+                          .filter(t => t.date === selectedDate)
+                          .map(task => (
+                            <div key={task.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl group">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${task.type === 'pago' ? 'bg-red-100 text-red-600' :
+                                  task.type === 'recordatorio' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'
+                                  }`}>
+                                  {task.type === 'pago' ? '💳' : task.type === 'recordatorio' ? '🔔' : '📌'}
+                                </div>
+                                <span className="text-sm font-medium text-slate-700">{task.description}</span>
+                              </div>
+                              <button
+                                onClick={() => deleteCalendarTask(task.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* All Tasks List */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-100">
+                <h3 className="font-bold text-lg text-slate-900 mb-2">Tareas del Mes</h3>
+                <p className="text-sm text-slate-500 mb-6">
+                  {currentMonth.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
+                </p>
+
+                {calendarTasks.filter(t => {
+                  const taskDate = new Date(t.date);
+                  return taskDate.getMonth() === currentMonth.getMonth() && taskDate.getFullYear() === currentMonth.getFullYear();
+                }).length === 0 ? (
+                  <div className="text-center py-8 text-slate-400">
+                    <Calendar size={40} className="mx-auto mb-3 opacity-50" />
+                    <p className="text-sm">No hay tareas programadas para este mes</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {calendarTasks
+                      .filter(t => {
+                        const taskDate = new Date(t.date);
+                        return taskDate.getMonth() === currentMonth.getMonth() && taskDate.getFullYear() === currentMonth.getFullYear();
+                      })
+                      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                      .map(task => (
+                        <div key={task.id} className={`flex items-center justify-between p-4 rounded-2xl group hover:bg-slate-100 transition-colors ${task.completed ? 'bg-green-50' : 'bg-slate-50'}`}>
+                          <div className="flex items-center gap-4">
+                            {/* Completion Checkbox */}
+                            <button
+                              onClick={() => toggleTaskCompleted(task.id)}
+                              className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${task.completed
+                                ? 'bg-green-500 border-green-500 text-white'
+                                : 'border-slate-300 hover:border-indigo-400'
+                                }`}
+                            >
+                              {task.completed && <Check size={14} />}
+                            </button>
+                            <div className="text-center min-w-[50px]">
+                              <p className={`text-2xl font-bold ${task.completed ? 'text-green-600' : 'text-indigo-600'}`}>
+                                {new Date(task.date + 'T12:00:00').getDate()}
+                              </p>
+                              <p className="text-xs text-slate-500 capitalize">
+                                {new Date(task.date + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'short' })}
+                              </p>
+                            </div>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${task.completed ? 'bg-green-100 opacity-60' :
+                              task.type === 'pago' ? 'bg-red-100' :
+                                task.type === 'recordatorio' ? 'bg-amber-100' : 'bg-blue-100'
+                              }`}>
+                              {task.completed ? '✅' : task.type === 'pago' ? '💳' : task.type === 'recordatorio' ? '🔔' : '📌'}
+                            </div>
+                            <div>
+                              <p className={`font-medium ${task.completed ? 'text-slate-500 line-through' : 'text-slate-800'}`}>{task.description}</p>
+                              <p className="text-xs text-slate-500 capitalize">
+                                {task.completed ? '✓ Completado' : task.type}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {!task.completed && (
+                              <button
+                                onClick={() => addToGoogleCalendar(task)}
+                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                title="Agregar a Google Calendar"
+                              >
+                                <Calendar size={18} />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteCalendarTask(task.id)}
+                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {/* Proyectos de Ahorro Tab */}
+          {activeTab === 'proyectos' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-slate-900">🎯 Proyectos de Ahorro</h2>
+              </div>
+
+              {/* Form to add new project */}
+              <BentoCard>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Nuevo Proyecto</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1">Nombre del Proyecto</label>
+                    <input
+                      type="text"
+                      value={newProject.name}
+                      onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+                      placeholder="Ej: Viaje a Italia"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1">Monto Objetivo ($)</label>
+                    <input
+                      type="number"
+                      value={newProject.targetAmount}
+                      onChange={(e) => setNewProject({ ...newProject, targetAmount: e.target.value })}
+                      placeholder="2000000"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1">Fecha Objetivo</label>
+                    <input
+                      type="date"
+                      value={newProject.targetDate}
+                      onChange={(e) => setNewProject({ ...newProject, targetDate: e.target.value })}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={addSavingsProject}
+                  disabled={!newProject.name || !newProject.targetAmount || !newProject.targetDate}
+                  className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <PlusCircle size={18} />
+                  Crear Proyecto de Ahorro
+                </button>
+              </BentoCard>
+
+              {/* Projects List */}
+              {savingsProjects.length === 0 ? (
+                <BentoCard>
+                  <div className="text-center py-12">
+                    <Target className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                    <p className="text-slate-500 text-lg mb-2">No tienes proyectos de ahorro</p>
+                    <p className="text-slate-400 text-sm">Crea tu primer proyecto para empezar a ahorrar</p>
+                  </div>
+                </BentoCard>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {savingsProjects.map((project) => {
+                    const today = new Date();
+                    const targetDate = new Date(project.targetDate);
+                    const createdDate = new Date(project.createdAt);
+                    const monthsRemaining = Math.max(1, Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30)));
+                    const totalMonths = Math.max(1, Math.ceil((targetDate.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24 * 30)));
+                    const remainingToSave = Math.max(0, project.targetAmount - project.savedAmount);
+                    const monthlySuggestion = remainingToSave / monthsRemaining;
+                    const progress = (project.savedAmount / project.targetAmount) * 100;
+                    const isCompleted = project.savedAmount >= project.targetAmount;
+
+                    return (
+                      <BentoCard key={project.id}>
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <h4 className="font-semibold text-slate-900 text-lg">{project.name}</h4>
+                            <p className="text-sm text-slate-500">
+                              Meta: {targetDate.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => deleteSavingsProject(project.id)}
+                            className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="mb-4">
+                          <div className="flex justify-between text-sm mb-2">
+                            <span className="text-slate-600">Ahorrado: <span className="font-semibold text-green-600">${project.savedAmount.toLocaleString('es-CL')}</span></span>
+                            <span className="text-slate-600">Meta: <span className="font-semibold">${project.targetAmount.toLocaleString('es-CL')}</span></span>
+                          </div>
+                          <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${isCompleted ? 'bg-green-500' : 'bg-indigo-500'}`}
+                              style={{ width: `${Math.min(100, progress)}%` }}
+                            />
+                          </div>
+                          <p className="text-sm text-slate-500 mt-1 text-right">{progress.toFixed(1)}% completado</p>
+                        </div>
+
+                        {/* Savings Plan */}
+                        {!isCompleted ? (
+                          <div className="bg-indigo-50 rounded-xl p-4 mb-4">
+                            <p className="text-sm text-indigo-700 mb-1">📊 Plan de Ahorro</p>
+                            <p className="text-2xl font-bold text-indigo-600">
+                              ${Math.round(monthlySuggestion).toLocaleString('es-CL')}
+                              <span className="text-sm font-normal text-indigo-500">/mes</span>
+                            </p>
+                            <p className="text-xs text-indigo-600 mt-1">
+                              {monthsRemaining} {monthsRemaining === 1 ? 'mes' : 'meses'} restantes • Faltan ${remainingToSave.toLocaleString('es-CL')}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="bg-green-50 rounded-xl p-4 mb-4 text-center">
+                            <p className="text-2xl">🎉</p>
+                            <p className="text-green-700 font-semibold">¡Meta alcanzada!</p>
+                          </div>
+                        )}
+
+                        {/* Add Contribution */}
+                        {!isCompleted && (
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              id={`contribution-${project.id}`}
+                              placeholder="Monto aporte"
+                              className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <button
+                              onClick={() => {
+                                const input = document.getElementById(`contribution-${project.id}`) as HTMLInputElement;
+                                const amount = parseFloat(input.value) || 0;
+                                if (amount > 0) {
+                                  addProjectContribution(project.id, amount);
+                                  input.value = '';
+                                }
+                              }}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-all"
+                            >
+                              + Aporte
+                            </button>
+                          </div>
+                        )}
+                      </BentoCard>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'historial' && (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold text-slate-900">Historial de Transacciones</h2>
@@ -1361,6 +3079,38 @@ const App: React.FC = () => {
           )}
         </main>
       </div>
+
+      {/* AI Chat Assistant */}
+      <AIChat
+        financialContext={{
+          totalIncome,
+          totalExpenses,
+          transactions: transactions.slice(0, 20).map(t => ({
+            description: t.description,
+            amount: t.amount,
+            date: t.date,
+            isIncome: t.isIncome || false,
+            expenseCategory: t.expenseCategory
+          })),
+          creditOperations: creditOperations.map(c => ({
+            description: c.description,
+            totalAmount: c.totalAmount,
+            monthlyInstallment: c.monthlyInstallment,
+            pendingBalance: c.pendingBalance,
+            remainingInstallments: c.remainingInstallments
+          })),
+          subscriptions: manualSubscriptions.map(s => ({
+            description: s.description,
+            monthlyAmount: s.monthlyAmount
+          })),
+          calendarTasks: calendarTasks.map(t => ({
+            date: t.date,
+            description: t.description,
+            type: t.type,
+            completed: t.completed
+          }))
+        }}
+      />
     </>
   );
 };
