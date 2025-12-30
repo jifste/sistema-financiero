@@ -1,0 +1,48 @@
+  // Function to export calendar tasks to ICS format for Google Calendar
+  const exportToGoogleCalendar = () => {
+    if (calendarTasks.length === 0) {
+      alert('No hay tareas para exportar');
+      return;
+    }
+
+    // Build ICS content using array to avoid whitespace issues
+    const lines: string[] = [];
+    lines.push('BEGIN:VCALENDAR');
+    lines.push('VERSION:2.0');
+    lines.push('PRODID:-//FinanceAI Pro//ES');
+    lines.push('CALSCALE:GREGORIAN');
+    lines.push('METHOD:PUBLISH');
+
+    calendarTasks.forEach(task => {
+      const dateStr = task.date.replace(/-/g, '');
+      const uid = task.id + '@financeai.local';
+      const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+      const cleanDesc = task.description.replace(/[,;]/g, ' ');
+      const typeLabel = task.type === 'pago' ? 'PAGO' : task.type === 'recordatorio' ? 'RECORDATORIO' : 'TAREA';
+
+      lines.push('BEGIN:VEVENT');
+      lines.push('UID:' + uid);
+      lines.push('DTSTAMP:' + now);
+      lines.push('DTSTART;VALUE=DATE:' + dateStr);
+      lines.push('SUMMARY:' + typeLabel + ' - ' + cleanDesc);
+      lines.push('DESCRIPTION:' + cleanDesc);
+      lines.push('STATUS:CONFIRMED');
+      lines.push('BEGIN:VALARM');
+      lines.push('TRIGGER:-P1D');
+      lines.push('ACTION:DISPLAY');
+      lines.push('DESCRIPTION:Recordatorio');
+      lines.push('END:VALARM');
+      lines.push('END:VEVENT');
+    });
+
+    lines.push('END:VCALENDAR');
+
+    const icsContent = lines.join('\r\n');
+    const blob = new Blob([icsContent], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'financeai_pagos.ics';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
