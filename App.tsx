@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 import jsPDF from 'jspdf';
@@ -46,7 +46,8 @@ import {
   ChevronDown,
   Plus,
   X,
-  Download
+  Download,
+  PiggyBank
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 
@@ -69,7 +70,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 const INCOME = 6137000;
 
-type TabType = 'resumen' | 'movimientos' | 'cuentas' | 'presupuesto' | 'creditos' | 'calendario' | 'proyectos' | 'historial';
+type TabType = 'resumen' | 'movimientos' | 'cuentas' | 'presupuesto' | 'creditos' | 'calendario' | 'proyectos' | 'historial' | 'ahorro' | 'proyeccion';
 
 // Expense categories for transaction classification
 const EXPENSE_CATEGORIES = [
@@ -130,6 +131,14 @@ interface SavingsProject {
   createdAt: string;
 }
 
+// Interface for savings projection entries
+interface SavingsProjectionEntry {
+  monthKey: string; // YYYY-MM format
+  usadoNecesidades: number;
+  usadoDeseos: number;
+  restanteAhorro: number;
+}
+
 const App: React.FC = () => {
   // Load saved data from localStorage on init
   const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
@@ -145,7 +154,12 @@ const App: React.FC = () => {
     loadFromStorage('financeai_transactions', [])
   );
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState<'todos' | 'ingresos' | 'gastos'>('todos');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSavingsMonth, setSelectedSavingsMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [activeTab, setActiveTab] = useState<TabType>('resumen');
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -180,6 +194,17 @@ const App: React.FC = () => {
   const [calendarTasks, setCalendarTasks] = useState<CalendarTask[]>(() =>
     loadFromStorage('financeai_calendar_tasks', [])
   );
+
+  // Savings projection state
+  const [savingsProjection, setSavingsProjection] = useState<SavingsProjectionEntry[]>(() =>
+    loadFromStorage('financeai_savings_projection', [])
+  );
+  const [newProjection, setNewProjection] = useState({
+    monthKey: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+    usadoNecesidades: '',
+    usadoDeseos: '',
+    restanteAhorro: ''
+  });
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [newTask, setNewTask] = useState({
@@ -217,6 +242,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('financeai_savings_projects', JSON.stringify(savingsProjects));
   }, [savingsProjects]);
+
+  useEffect(() => {
+    localStorage.setItem('financeai_savings_projection', JSON.stringify(savingsProjection));
+  }, [savingsProjection]);
 
   // Imported files state
   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>(() =>
@@ -436,6 +465,16 @@ const App: React.FC = () => {
 
     setIsImporting(true);
     setImportStatus('📥 Procesando archivo...');
+
+    // Save current month data before importing new transactions
+    if (transactions.length > 0) {
+      const savedMonth = saveCurrentMonthData();
+      if (savedMonth) {
+        setImportStatus(`💾 Guardando datos de ${savedMonth}...`);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay to show message
+        setImportStatus('📥 Procesando archivo...');
+      }
+    }
 
     try {
       let result = { count: 0, ids: [] as string[] };
@@ -1000,6 +1039,54 @@ const App: React.FC = () => {
   const debts = useMemo(() => getDebtTimeline(transactions), [transactions]);
   const projection = useMemo(() => getCashFlowProjection(transactions), [transactions]);
 
+  // Function to save current month data to savingsProjection
+  const saveCurrentMonthData = useCallback(() => {
+    // Get current month from transactions
+    const monthsInTransactions = transactions
+      .filter(t => t.date)
+      .map(t => {
+        const date = new Date(t.date);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      })
+      .filter((v, i, a) => a.indexOf(v) === i);
+
+    if (monthsInTransactions.length === 0) return null;
+
+    // Use the most common month in transactions
+    const monthKey = monthsInTransactions[0];
+
+    // Check if we already have data for this month
+    const existingEntry = savingsProjection.find(p => p.monthKey === monthKey);
+    if (existingEntry) return monthKey; // Already saved
+
+    // Calculate current month data using same logic as budget tab
+    const presupuestoAhorro = totalIncome * 0.20;
+
+    const gastadoNecesidades = transactions
+      .filter(t => t.category === CategoryType.NEED && !t.isIncome)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const gastadoDeseos = transactions
+      .filter(t => t.category === CategoryType.WANT && !t.isIncome)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const ahorradoActual = transactions
+      .filter(t => t.category === CategoryType.SAVINGS && !t.isIncome)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const restanteAhorro = Math.max(0, presupuestoAhorro - ahorradoActual);
+
+    const entry: SavingsProjectionEntry = {
+      monthKey,
+      usadoNecesidades: gastadoNecesidades,
+      usadoDeseos: gastadoDeseos,
+      restanteAhorro
+    };
+
+    setSavingsProjection(prev => [...prev, entry]);
+    return monthKey;
+  }, [transactions, totalIncome, savingsProjection]);
+
   const totalMonthlyExpenses = totalExpenses;
 
   const totalDebtBalance = useMemo(() => {
@@ -1012,6 +1099,52 @@ const App: React.FC = () => {
     const subscriptions = manualSubscriptions.reduce((sum, s) => sum + s.monthlyAmount, 0);
     return creditInstallments + subscriptions;
   }, [creditOperations, manualSubscriptions]);
+
+  // Available months for savings calculation (based on transactions)
+  const availableSavingsMonths = useMemo(() => {
+    const months = new Set<string>();
+    transactions.forEach(t => {
+      const date = new Date(t.date);
+      months.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+    });
+    // Add current month
+    const now = new Date();
+    months.add(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+    return Array.from(months).sort().reverse();
+  }, [transactions]);
+
+  // Calculate savings data for a given month
+  const calculateSavingsForMonth = useCallback((monthKey: string) => {
+    const [year, month] = monthKey.split('-').map(Number);
+
+    const monthTransactions = transactions.filter(t => {
+      const d = new Date(t.date);
+      return d.getFullYear() === year && d.getMonth() + 1 === month;
+    });
+
+    let ingresos = 0;
+    let necesidades = 0;
+    let deseos = 0;
+    let ahorroDirecto = 0;
+
+    monthTransactions.forEach(t => {
+      const amount = t.isInstallment ? (t.installmentValue || 0) : t.amount;
+      if (t.isIncome) {
+        ingresos += amount;
+      } else if (t.category === CategoryType.NEED) {
+        necesidades += amount;
+      } else if (t.category === CategoryType.WANT) {
+        deseos += amount;
+      } else if (t.category === CategoryType.SAVINGS) {
+        ahorroDirecto += amount;
+      }
+    });
+
+    const ahorroReal = ingresos - necesidades - deseos;
+    const tasaAhorro = ingresos > 0 ? (ahorroReal / ingresos) * 100 : 0;
+
+    return { ingresos, necesidades, deseos, ahorroDirecto, ahorroReal, tasaAhorro, transactionCount: monthTransactions.length };
+  }, [transactions]);
 
   // Calculate debt paydown projection (how debt decreases over time)
   const debtPaydownProjection = useMemo(() => {
@@ -1110,9 +1243,10 @@ const App: React.FC = () => {
     return transactions.filter(t => {
       const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = filterCategory ? t.subCategory === filterCategory : true;
-      return matchesSearch && matchesCategory;
+      const matchesType = filterType === 'todos' ? true : filterType === 'ingresos' ? t.isIncome === true : t.isIncome !== true;
+      return matchesSearch && matchesCategory && matchesType;
     });
-  }, [transactions, searchTerm, filterCategory]);
+  }, [transactions, searchTerm, filterCategory, filterType]);
 
   const categorySpending = useMemo(() => {
     const map: Record<string, number> = {};
@@ -1209,6 +1343,8 @@ const App: React.FC = () => {
               { icon: Calendar, label: 'Calendario', tab: 'calendario' as TabType },
               { icon: Target, label: 'Proyectos', tab: 'proyectos' as TabType },
               { icon: Clock, label: 'Historial', tab: 'historial' as TabType },
+              { icon: PiggyBank, label: 'Ahorro', tab: 'ahorro' as TabType },
+              { icon: TrendingUp, label: 'Proyección', tab: 'proyeccion' as TabType },
             ].map((item) => (
               <button
                 key={item.label}
@@ -1787,15 +1923,39 @@ const App: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input
-                      type="text"
-                      placeholder="Buscar transacción..."
-                      className="pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full md:w-64"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
+                  <div className="flex items-center gap-3">
+                    {/* Filtros por tipo */}
+                    <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+                      <button
+                        onClick={() => setFilterType('todos')}
+                        className={`px-3 py-2 text-xs font-medium transition-all ${filterType === 'todos' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        onClick={() => setFilterType('ingresos')}
+                        className={`px-3 py-2 text-xs font-medium border-l border-slate-200 transition-all ${filterType === 'ingresos' ? 'bg-green-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        💰 Ingresos
+                      </button>
+                      <button
+                        onClick={() => setFilterType('gastos')}
+                        className={`px-3 py-2 text-xs font-medium border-l border-slate-200 transition-all ${filterType === 'gastos' ? 'bg-red-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        💸 Gastos
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                      <input
+                        type="text"
+                        placeholder="Buscar transacción..."
+                        className="pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full md:w-64"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -2095,32 +2255,68 @@ const App: React.FC = () => {
                   <div>
                     <p className="text-xs text-slate-500 mb-1">Necesidades (50%)</p>
                     <p className="text-sm font-bold text-blue-600">${(totalIncome * 0.50).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</p>
-                    <p className={`text-xs mt-1 ${health.totals[CategoryType.NEED] <= totalIncome * 0.50 ? 'text-green-600' : 'text-red-600'}`}>
-                      {health.totals[CategoryType.NEED] <= totalIncome * 0.50 ?
-                        `Disponible: $${(totalIncome * 0.50 - health.totals[CategoryType.NEED]).toLocaleString('es-CL', { maximumFractionDigits: 0 })}` :
-                        `Excedido: $${(health.totals[CategoryType.NEED] - totalIncome * 0.50).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
-                      }
-                    </p>
+                    {(() => {
+                      const presupuesto = totalIncome * 0.50;
+                      const gastado = health.totals[CategoryType.NEED] || 0;
+                      const disponible = presupuesto - gastado;
+                      return (
+                        <>
+                          <p className="text-xs mt-1 text-orange-600">
+                            Usado: ${gastado.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                          </p>
+                          <p className={`text-xs ${disponible >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {disponible >= 0
+                              ? `Disponible: $${disponible.toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                              : `Excedido: $${Math.abs(disponible).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                            }
+                          </p>
+                        </>
+                      );
+                    })()}
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 mb-1">Deseos (30%)</p>
                     <p className="text-sm font-bold text-purple-600">${(totalIncome * 0.30).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</p>
-                    <p className={`text-xs mt-1 ${health.totals[CategoryType.WANT] <= totalIncome * 0.30 ? 'text-green-600' : 'text-red-600'}`}>
-                      {health.totals[CategoryType.WANT] <= totalIncome * 0.30 ?
-                        `Disponible: $${(totalIncome * 0.30 - health.totals[CategoryType.WANT]).toLocaleString('es-CL', { maximumFractionDigits: 0 })}` :
-                        `Excedido: $${(health.totals[CategoryType.WANT] - totalIncome * 0.30).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
-                      }
-                    </p>
+                    {(() => {
+                      const presupuesto = totalIncome * 0.30;
+                      const gastado = health.totals[CategoryType.WANT] || 0;
+                      const disponible = presupuesto - gastado;
+                      return (
+                        <>
+                          <p className="text-xs mt-1 text-orange-600">
+                            Usado: ${gastado.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                          </p>
+                          <p className={`text-xs ${disponible >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {disponible >= 0
+                              ? `Disponible: $${disponible.toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                              : `Excedido: $${Math.abs(disponible).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                            }
+                          </p>
+                        </>
+                      );
+                    })()}
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 mb-1">Ahorro (20%)</p>
                     <p className="text-sm font-bold text-green-600">${(totalIncome * 0.20).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</p>
-                    <p className={`text-xs mt-1 ${health.totals[CategoryType.SAVINGS] >= totalIncome * 0.20 ? 'text-green-600' : 'text-orange-600'}`}>
-                      {health.totals[CategoryType.SAVINGS] >= totalIncome * 0.20 ?
-                        `✓ Meta alcanzada` :
-                        `Falta: $${(totalIncome * 0.20 - health.totals[CategoryType.SAVINGS]).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
-                      }
-                    </p>
+                    {(() => {
+                      const presupuestoAhorro = totalIncome * 0.20;
+                      const gastadoDeAhorros = health.totals[CategoryType.SAVINGS] || 0;
+                      const ahorroRestante = presupuestoAhorro - gastadoDeAhorros;
+                      return (
+                        <>
+                          <p className="text-xs mt-1 text-orange-600">
+                            Usado: ${gastadoDeAhorros.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                          </p>
+                          <p className={`text-xs ${ahorroRestante >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {ahorroRestante >= 0
+                              ? `Restante: $${ahorroRestante.toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                              : `Excedido: $${Math.abs(ahorroRestante).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+                            }
+                          </p>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -3074,6 +3270,516 @@ const App: React.FC = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'ahorro' && (() => {
+            // Usar funciones definidas a nivel de componente
+            const currentData = calculateSavingsForMonth(selectedSavingsMonth);
+
+            // Datos históricos para el gráfico (solo mes actual y anterior)
+            // Usando los mismos valores globales que el widget principal
+            const presupuestoNecesidadesGlobal = totalIncome * 0.50;
+            const presupuestoDeseosGlobal = totalIncome * 0.30;
+            const presupuestoAhorroGlobal = totalIncome * 0.20;
+            const gastadoNecesidadesGlobal = health.totals[CategoryType.NEED] || 0;
+            const gastadoDeseosGlobal = health.totals[CategoryType.WANT] || 0;
+            const ahorradoGlobal = health.totals[CategoryType.SAVINGS] || 0;
+
+            const disponibleNecesidadesGlobal = Math.max(0, presupuestoNecesidadesGlobal - gastadoNecesidadesGlobal);
+            const disponibleDeseosGlobal = Math.max(0, presupuestoDeseosGlobal - gastadoDeseosGlobal);
+            const faltaAhorroGlobal = Math.max(0, presupuestoAhorroGlobal - ahorradoGlobal);
+            const totalAhorroGlobal = faltaAhorroGlobal + disponibleNecesidadesGlobal + disponibleDeseosGlobal;
+
+            // Get current month key
+            const now = new Date();
+            const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+            // Combine savingsProjection data with current month calculated in real-time
+            const historicalData = (() => {
+              const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+              // Get saved months from savingsProjection
+              const savedMonths = savingsProjection.map(entry => ({
+                month: `${monthNames[parseInt(entry.monthKey.split('-')[1]) - 1]} ${entry.monthKey.split('-')[0].slice(-2)}`,
+                monthKey: entry.monthKey,
+                ahorro: entry.restanteAhorro,
+                positivo: entry.restanteAhorro >= 0
+              }));
+
+              // Add current month (calculated in real-time) if not already saved
+              const currentMonthSaved = savingsProjection.some(p => p.monthKey === currentMonthKey);
+              const currentMonthData = {
+                month: `${monthNames[now.getMonth()]} ${now.getFullYear().toString().slice(-2)}`,
+                monthKey: currentMonthKey,
+                ahorro: totalAhorroGlobal,
+                positivo: totalAhorroGlobal >= 0
+              };
+
+              const combined = currentMonthSaved ? savedMonths : [...savedMonths, currentMonthData];
+
+              // Sort by monthKey and return last 6 months
+              return combined
+                .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+                .slice(-6);
+            })();
+
+            const formatMonthLabel = (monthKey: string) => {
+              const [year, month] = monthKey.split('-').map(Number);
+              const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+              return `${monthNames[month - 1]} ${year}`;
+            };
+
+            return (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-slate-900">Monitoreo de Ahorro</h2>
+
+                  {/* Selector de Mes */}
+                  <div className="flex items-center gap-2">
+                    <Calendar size={18} className="text-slate-400" />
+                    <select
+                      value={selectedSavingsMonth}
+                      onChange={(e) => setSelectedSavingsMonth(e.target.value)}
+                      className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {availableSavingsMonths.map(m => (
+                        <option key={m} value={m}>{formatMonthLabel(m)}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Grid de indicadores (mismos valores que Resumen/Presupuesto) */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-2xl p-5 border border-slate-100">
+                    <p className="text-slate-500 text-sm mb-1">💰 Ingresos</p>
+                    <p className="text-2xl font-bold text-green-600">+${totalIncome.toLocaleString('es-CL')}</p>
+                  </div>
+                  <div className="bg-white rounded-2xl p-5 border border-slate-100">
+                    <p className="text-slate-500 text-sm mb-1">🏠 Necesidades</p>
+                    <p className="text-2xl font-bold text-blue-600">-${(health.totals[CategoryType.NEED] || 0).toLocaleString('es-CL')}</p>
+                  </div>
+                  <div className="bg-white rounded-2xl p-5 border border-slate-100">
+                    <p className="text-slate-500 text-sm mb-1">🎉 Deseos</p>
+                    <p className="text-2xl font-bold text-purple-600">-${(health.totals[CategoryType.WANT] || 0).toLocaleString('es-CL')}</p>
+                  </div>
+                  <div className="bg-white rounded-2xl p-5 border border-slate-100">
+                    <p className="text-slate-500 text-sm mb-1">📊 Transacciones</p>
+                    <p className="text-2xl font-bold text-slate-700">{transactions.length}</p>
+                  </div>
+                </div>
+
+                {/* Resumen de Ahorro del Mes - Regla 50/30/20 */}
+                {(() => {
+                  // Usar los mismos valores que la pestaña Presupuesto
+                  const presupuestoNecesidades = totalIncome * 0.50;
+                  const presupuestoDeseos = totalIncome * 0.30;
+                  const presupuestoAhorro = totalIncome * 0.20;
+
+                  // Valores gastados (desde health.totals - igual que Presupuesto)
+                  const gastadoNecesidades = health.totals[CategoryType.NEED] || 0;
+                  const gastadoDeseos = health.totals[CategoryType.WANT] || 0;
+                  const ahorradoActual = health.totals[CategoryType.SAVINGS] || 0;
+
+                  // Disponible de Necesidades y Deseos (igual que la glosa "Disponible" en Presupuesto)
+                  const disponibleNecesidades = Math.max(0, presupuestoNecesidades - gastadoNecesidades);
+                  const disponibleDeseos = Math.max(0, presupuestoDeseos - gastadoDeseos);
+
+                  // Falta para Ahorro (igual que la glosa "Falta" en Presupuesto)
+                  const faltaAhorro = Math.max(0, presupuestoAhorro - ahorradoActual);
+
+                  // Si ya alcanzaste la meta de ahorro, usar lo ya ahorrado
+                  const ahorroContabilizado = ahorradoActual >= presupuestoAhorro ? presupuestoAhorro : faltaAhorro;
+                  const metaAlcanzada = ahorradoActual >= presupuestoAhorro;
+
+                  // Total ahorro = Restante Ahorro (20%) + Disponible Necesidades + Disponible Deseos
+                  const totalAhorro = faltaAhorro + disponibleNecesidades + disponibleDeseos;
+
+                  return (
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-3xl p-6 border border-green-100">
+                      <h3 className="font-bold text-lg text-slate-900 mb-4 flex items-center gap-2">
+                        <PiggyBank size={20} className="text-green-600" />
+                        Tu Ahorro del Mes (Regla 50/30/20)
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Columna izquierda: Desglose */}
+                        <div className="space-y-3">
+                          {/* Ahorro 20% - Restante */}
+                          <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-green-100">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                              <div>
+                                <span className="text-slate-700 text-sm font-medium">Ahorro 20% (Restante)</span>
+                                <p className="text-xs text-slate-400">
+                                  Meta: ${presupuestoAhorro.toLocaleString('es-CL', { maximumFractionDigits: 0 })} | Usado: ${ahorradoActual.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`font-bold text-lg ${faltaAhorro > 0 ? 'text-green-600' : 'text-orange-500'}`}>
+                              {faltaAhorro > 0 ? `+$${faltaAhorro.toLocaleString('es-CL', { maximumFractionDigits: 0 })}` : 'Agotado'}
+                            </span>
+                          </div>
+
+                          {/* Disponible Necesidades */}
+                          <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-blue-100">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                              <div>
+                                <span className="text-slate-700 text-sm font-medium">Disponible Necesidades (50%)</span>
+                                <p className="text-xs text-slate-400">
+                                  ${presupuestoNecesidades.toLocaleString('es-CL', { maximumFractionDigits: 0 })} - ${gastadoNecesidades.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`font-bold text-lg ${disponibleNecesidades > 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                              {disponibleNecesidades > 0 ? `+$${disponibleNecesidades.toLocaleString('es-CL', { maximumFractionDigits: 0 })}` : 'Excedido'}
+                            </span>
+                          </div>
+
+                          {/* Disponible Deseos */}
+                          <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-purple-100">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                              <div>
+                                <span className="text-slate-700 text-sm font-medium">Disponible Deseos (30%)</span>
+                                <p className="text-xs text-slate-400">
+                                  ${presupuestoDeseos.toLocaleString('es-CL', { maximumFractionDigits: 0 })} - ${gastadoDeseos.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`font-bold text-lg ${disponibleDeseos > 0 ? 'text-purple-600' : 'text-red-500'}`}>
+                              {disponibleDeseos > 0 ? `+$${disponibleDeseos.toLocaleString('es-CL', { maximumFractionDigits: 0 })}` : 'Excedido'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Columna derecha: Total con desglose */}
+                        <div className={`flex flex-col justify-center p-6 rounded-2xl ${totalAhorro > 0 ? 'bg-gradient-to-br from-green-500 to-emerald-600' : 'bg-gradient-to-br from-slate-400 to-slate-500'} text-white shadow-lg`}>
+                          <div className="text-center mb-4">
+                            <p className="text-white/80 text-sm mb-1">💰 TOTAL AHORRO DEL MES</p>
+                            <p className="text-4xl font-bold">
+                              ${totalAhorro.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                            </p>
+                          </div>
+
+                          {/* Desglose del cálculo */}
+                          <div className="bg-white/10 rounded-xl p-4 space-y-2">
+                            <p className="text-white/60 text-xs font-semibold mb-2">📊 Cómo se calcula:</p>
+
+                            <div className="flex justify-between text-sm">
+                              <span className="text-white/80">Restante Ahorro (20%)</span>
+                              <span className="font-bold">${faltaAhorro.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                            </div>
+
+                            <div className="flex justify-between text-sm">
+                              <span className="text-white/80">+ Disponible Necesidades</span>
+                              <span className="font-bold">${disponibleNecesidades.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                            </div>
+
+                            <div className="flex justify-between text-sm">
+                              <span className="text-white/80">+ Disponible Deseos</span>
+                              <span className="font-bold">${disponibleDeseos.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                            </div>
+
+                            <div className="border-t border-white/20 pt-2 mt-2 flex justify-between text-sm font-bold">
+                              <span>= Total</span>
+                              <span>${totalAhorro.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Gráfico de Evolución Histórica */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-100">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                      <TrendingUp size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900">Evolución del Ahorro Mensual</h3>
+                      <p className="text-xs text-slate-500">Historial basado en tus transacciones categorizadas</p>
+                    </div>
+                  </div>
+                  {historicalData.length > 0 ? (
+                    <>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <BarChart data={historicalData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                          <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(v) => `$${(v / 1000000).toFixed(1)}M`} />
+                          <Tooltip
+                            formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, 'Ahorro']}
+                            contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
+                          />
+                          <Bar
+                            dataKey="ahorro"
+                            radius={[8, 8, 0, 0]}
+                            onClick={(data) => setSelectedSavingsMonth(data.monthKey)}
+                            className="cursor-pointer"
+                          >
+                            {historicalData.map((entry, index) => (
+                              <Cell
+                                key={`cell-${index}`}
+                                fill={entry.monthKey === selectedSavingsMonth ? (entry.positivo ? '#16a34a' : '#dc2626') : (entry.positivo ? '#22c55e' : '#ef4444')}
+                                stroke={entry.monthKey === selectedSavingsMonth ? '#000' : 'none'}
+                                strokeWidth={entry.monthKey === selectedSavingsMonth ? 2 : 0}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <div className="flex justify-center gap-6 mt-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                          <span className="text-xs text-slate-600">Ahorro Positivo</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                          <span className="text-xs text-slate-600">Déficit</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded border-2 border-slate-400"></div>
+                          <span className="text-xs text-slate-600">Mes Seleccionado</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-12 text-slate-500">
+                      <PiggyBank size={48} className="mx-auto mb-4 text-slate-300" />
+                      <p>No hay datos históricos disponibles</p>
+                      <p className="text-sm">Importa tu cartola para ver la evolución</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Nota informativa */}
+                <div className="bg-indigo-50 rounded-2xl p-5 border border-indigo-100">
+                  <div className="flex gap-3">
+                    <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg h-fit">
+                      <Sparkles size={18} />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-indigo-900 mb-1">💡 Cómo funciona</h4>
+                      <p className="text-sm text-indigo-700">
+                        El <strong>Ahorro Efectivo</strong> se calcula con tus transacciones reales de la cartola:
+                        Ingresos - Necesidades - Deseos. Clasifica tus gastos en <strong>Movimientos</strong>
+                        para ver datos precisos. Haz clic en las barras del gráfico para ver el detalle de cada mes.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Tab: Proyección de Ahorro */}
+          {activeTab === 'proyeccion' && (
+            <div className="p-6 space-y-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-3 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl shadow-lg">
+                  <TrendingUp className="text-white" size={28} />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-800">Proyección de Ahorro</h1>
+                  <p className="text-slate-500">Registra tus datos mensuales y visualiza la evolución de tu ahorro</p>
+                </div>
+              </div>
+
+              {/* Widget 1: Ingreso de Datos Mensuales */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                <h2 className="font-bold text-lg text-slate-900 mb-4 flex items-center gap-2">
+                  <FileText size={20} className="text-indigo-600" />
+                  Ingresar Datos del Mes
+                </h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Mes</label>
+                    <input
+                      type="month"
+                      value={newProjection.monthKey}
+                      onChange={(e) => setNewProjection(prev => ({ ...prev, monthKey: e.target.value }))}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Usado Necesidades</label>
+                    <input
+                      type="number"
+                      placeholder="$0"
+                      value={newProjection.usadoNecesidades}
+                      onChange={(e) => setNewProjection(prev => ({ ...prev, usadoNecesidades: e.target.value }))}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Usado Deseos</label>
+                    <input
+                      type="number"
+                      placeholder="$0"
+                      value={newProjection.usadoDeseos}
+                      onChange={(e) => setNewProjection(prev => ({ ...prev, usadoDeseos: e.target.value }))}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Restante Ahorro</label>
+                    <input
+                      type="number"
+                      placeholder="$0"
+                      value={newProjection.restanteAhorro}
+                      onChange={(e) => setNewProjection(prev => ({ ...prev, restanteAhorro: e.target.value }))}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    if (newProjection.monthKey && newProjection.restanteAhorro) {
+                      const entry: SavingsProjectionEntry = {
+                        monthKey: newProjection.monthKey,
+                        usadoNecesidades: parseFloat(newProjection.usadoNecesidades) || 0,
+                        usadoDeseos: parseFloat(newProjection.usadoDeseos) || 0,
+                        restanteAhorro: parseFloat(newProjection.restanteAhorro) || 0
+                      };
+                      // Update or add entry
+                      setSavingsProjection(prev => {
+                        const existing = prev.findIndex(p => p.monthKey === entry.monthKey);
+                        if (existing >= 0) {
+                          const updated = [...prev];
+                          updated[existing] = entry;
+                          return updated;
+                        }
+                        return [...prev, entry];
+                      });
+                      setNewProjection({
+                        monthKey: newProjection.monthKey,
+                        usadoNecesidades: '',
+                        usadoDeseos: '',
+                        restanteAhorro: ''
+                      });
+                    }
+                  }}
+                  className="px-6 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-semibold hover:opacity-90 transition-opacity"
+                >
+                  Guardar Mes
+                </button>
+
+                {/* Lista de meses ingresados */}
+                {savingsProjection.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold text-slate-600 mb-3">Meses Registrados</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {savingsProjection
+                        .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+                        .map(entry => {
+                          const [year, month] = entry.monthKey.split('-');
+                          const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                          const monthLabel = `${monthNames[parseInt(month) - 1]} ${year}`;
+                          return (
+                            <div key={entry.monthKey} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                              <div>
+                                <span className="font-semibold text-slate-700">{monthLabel}</span>
+                                <div className="text-xs text-slate-500 mt-1">
+                                  <span className="text-blue-600">Nec: ${entry.usadoNecesidades.toLocaleString('es-CL')}</span>
+                                  {' | '}
+                                  <span className="text-purple-600">Des: ${entry.usadoDeseos.toLocaleString('es-CL')}</span>
+                                  {' | '}
+                                  <span className="text-green-600">Ahorro: ${entry.restanteAhorro.toLocaleString('es-CL')}</span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setSavingsProjection(prev => prev.filter(p => p.monthKey !== entry.monthKey))}
+                                className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Eliminar"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Widget 2: Gráfico de Evolución del Ahorro */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                <h2 className="font-bold text-lg text-slate-900 mb-4 flex items-center gap-2">
+                  <TrendingUp size={20} className="text-green-600" />
+                  Evolución del Ahorro Restante
+                </h2>
+
+                {savingsProjection.length === 0 ? (
+                  <div className="text-center py-12">
+                    <PiggyBank size={48} className="mx-auto mb-4 text-slate-300" />
+                    <p className="text-slate-400">No hay datos de proyección.</p>
+                    <p className="text-sm text-slate-400 mt-1">Ingresa los datos de al menos un mes para ver el gráfico.</p>
+                  </div>
+                ) : (
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={savingsProjection
+                          .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+                          .map(entry => {
+                            const [year, month] = entry.monthKey.split('-');
+                            const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                            return {
+                              month: `${monthNames[parseInt(month) - 1]} ${year.slice(-2)}`,
+                              ahorro: entry.restanteAhorro,
+                              necesidades: entry.usadoNecesidades,
+                              deseos: entry.usadoDeseos
+                            };
+                          })}
+                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorAhorro" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} />
+                        <YAxis
+                          tick={{ fill: '#64748b', fontSize: 12 }}
+                          tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'white',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '12px',
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                          }}
+                          formatter={(value: number, name: string) => [
+                            `$${value.toLocaleString('es-CL')}`,
+                            name === 'ahorro' ? 'Restante Ahorro' : name === 'necesidades' ? 'Usado Necesidades' : 'Usado Deseos'
+                          ]}
+                        />
+                        <Legend
+                          formatter={(value) => value === 'ahorro' ? 'Restante Ahorro' : value === 'necesidades' ? 'Usado Necesidades' : 'Usado Deseos'}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="ahorro"
+                          stroke="#10b981"
+                          strokeWidth={3}
+                          fillOpacity={1}
+                          fill="url(#colorAhorro)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
             </div>
           )}
