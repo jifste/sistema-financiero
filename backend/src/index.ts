@@ -60,10 +60,12 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ error: 'Internal Server Error' });
 });
 
-// Start Server
-app.listen(PORT, () => {
-    console.log(`🚀 FinanceAI Backend running on port ${PORT}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/health`);
-});
+// Start Server only if not running in Vercel (local development)
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`🚀 FinanceAI Backend running on port ${PORT}`);
+        console.log(`📊 Health check: http://localhost:${PORT}/health`);
+    });
+}
 
 export default app;
