@@ -47,7 +47,8 @@ import {
   Plus,
   X,
   Download,
-  PiggyBank
+  PiggyBank,
+  LogOut
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 
@@ -64,6 +65,7 @@ import { BentoCard } from './components/BentoCard';
 import { FinancialHealthGauge } from './components/FinancialHealthGauge';
 import { SnowballSimulator } from './components/SnowballSimulator';
 import { AIChat } from './components/AIChat';
+import { useAuth } from './src/contexts/AuthContext';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -140,6 +142,9 @@ interface SavingsProjectionEntry {
 }
 
 const App: React.FC = () => {
+  // Auth hook for logout functionality
+  const { user, logout } = useAuth();
+
   // Load saved data from localStorage on init
   const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
     try {
@@ -1379,13 +1384,20 @@ const App: React.FC = () => {
           <header className="flex justify-between items-start mb-10">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <h1 className="text-3xl font-bold text-slate-900">Hola, {userName || 'Usuario'} 👋</h1>
+                <h1 className="text-3xl font-bold text-slate-900">Hola, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || userName || 'Usuario'} 👋</h1>
                 <button
                   onClick={() => { setTempName(userName); setShowEditName(true); }}
                   className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all"
                   title="Cambiar nombre"
                 >
                   <Settings size={16} />
+                </button>
+                <button
+                  onClick={logout}
+                  className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all"
+                  title="Cerrar sesión"
+                >
+                  <LogOut size={16} />
                 </button>
               </div>
               <p className="text-slate-500">Aquí tienes el análisis de tus finanzas para {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}.</p>

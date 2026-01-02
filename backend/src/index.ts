@@ -17,8 +17,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 
-// Health Check Endpoint (Railway needs this)
-app.get('/health', (_req: Request, res: Response) => {
+// Health Check Endpoint (Vercel/Railway needs this)
+app.get('/api/health', (_req: Request, res: Response) => {
     res.status(200).json({
         status: 'ok',
         timestamp: new Date().toISOString(),
