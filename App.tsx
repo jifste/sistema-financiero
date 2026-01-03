@@ -48,7 +48,8 @@ import {
   X,
   Download,
   PiggyBank,
-  LogOut
+  LogOut,
+  Menu
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 
@@ -174,6 +175,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('resumen');
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Credit operations state
@@ -1360,8 +1362,16 @@ const App: React.FC = () => {
       )}
 
       <div className="min-h-screen bg-[#F8FAFC] flex">
+        {/* Mobile sidebar overlay */}
+        {isMobileSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        )}
+        
         {/* Sidebar */}
-        <aside className="w-72 bg-white border-r border-slate-100 p-8 flex flex-col fixed h-full z-10">
+        <aside className={`w-72 bg-white border-r border-slate-100 p-8 flex flex-col fixed h-full z-50 transition-transform duration-300 ease-in-out lg:translate-x-0 ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center gap-3 mb-10">
             <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
               <TrendingUp size={24} />
@@ -1384,7 +1394,10 @@ const App: React.FC = () => {
             ].map((item) => (
               <button
                 key={item.label}
-                onClick={() => setActiveTab(item.tab)}
+                onClick={() => {
+                  setActiveTab(item.tab);
+                  setIsMobileSidebarOpen(false);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === item.tab ? 'bg-indigo-50 text-indigo-600 font-semibold shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
               >
                 <item.icon size={20} />
@@ -1410,32 +1423,44 @@ const App: React.FC = () => {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-grow ml-72 p-10 max-w-7xl mx-auto w-full">
+        <main className="flex-grow lg:ml-72 p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto w-full">
           {/* Header Section */}
-          <header className="flex justify-between items-start mb-10">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <h1 className="text-3xl font-bold text-slate-900">Hola, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || userName || 'Usuario'} 👋</h1>
-                <button
-                  onClick={() => { setTempName(userName); setShowEditName(true); }}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all"
-                  title="Cambiar nombre"
-                >
-                  <Settings size={16} />
-                </button>
-                <button
-                  onClick={logout}
-                  className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all"
-                  title="Cerrar sesión"
-                >
-                  <LogOut size={16} />
-                </button>
+          <header className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6 lg:mb-10">
+            <div className="flex items-start gap-3 w-full sm:w-auto">
+              {/* Mobile menu button */}
+              <button
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shadow-sm flex-shrink-0"
+                aria-label="Abrir menú"
+              >
+                <Menu size={24} />
+              </button>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 truncate">Hola, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || userName || 'Usuario'} 👋</h1>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => { setTempName(userName); setShowEditName(true); }}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all"
+                      title="Cambiar nombre"
+                    >
+                      <Settings size={16} />
+                    </button>
+                    <button
+                      onClick={logout}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all"
+                      title="Cerrar sesión"
+                    >
+                      <LogOut size={16} />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-slate-500 text-sm lg:text-base">Aquí tienes el análisis de tus finanzas para {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}.</p>
               </div>
-              <p className="text-slate-500">Aquí tienes el análisis de tus finanzas para {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}.</p>
             </div>
-            <div className="flex gap-3 items-center">
+            <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto">
               {importStatus && (
-                <span className="text-sm font-medium text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">
+                <span className="text-xs sm:text-sm font-medium text-indigo-600 bg-indigo-50 px-2 sm:px-3 py-1 rounded-lg truncate max-w-[150px] sm:max-w-none">
                   {importStatus}
                 </span>
               )}
@@ -1449,10 +1474,11 @@ const App: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isImporting}
-                className={`px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-medium shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2 ${isImporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`px-3 sm:px-5 py-2 sm:py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-medium shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap ${isImporting ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <FileSpreadsheet size={18} />
-                Importar Excel/PDF
+                <span className="hidden sm:inline">Importar Excel/PDF</span>
+                <span className="sm:hidden">Importar</span>
               </button>
             </div>
           </header>
