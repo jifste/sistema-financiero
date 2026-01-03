@@ -145,19 +145,25 @@ const App: React.FC = () => {
   // Auth hook for logout functionality
   const { user, logout } = useAuth();
 
-  // Load saved data from localStorage on init
-  const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
+  // Helper to get user-specific storage key
+  const getStorageKey = useCallback((key: string): string => {
+    const userId = user?.id || 'guest';
+    return `financeai_${userId}_${key}`;
+  }, [user?.id]);
+
+  // Load saved data from localStorage with user-specific key
+  const loadFromStorage = useCallback(<T,>(key: string, defaultValue: T): T => {
     try {
-      const saved = localStorage.getItem(key);
+      const storageKey = getStorageKey(key);
+      const saved = localStorage.getItem(storageKey);
       return saved ? JSON.parse(saved) : defaultValue;
     } catch {
       return defaultValue;
     }
-  };
+  }, [getStorageKey]);
 
-  const [transactions, setTransactions] = useState<Transaction[]>(() =>
-    loadFromStorage('financeai_transactions', [])
-  );
+  // State declarations - will be reloaded when user changes
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'todos' | 'ingresos' | 'gastos'>('todos');
   const [searchTerm, setSearchTerm] = useState('');
@@ -170,10 +176,8 @@ const App: React.FC = () => {
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Credit operations state - loaded from localStorage
-  const [creditOperations, setCreditOperations] = useState<CreditOperation[]>(() =>
-    loadFromStorage('financeai_credits', [])
-  );
+  // Credit operations state
+  const [creditOperations, setCreditOperations] = useState<CreditOperation[]>([]);
   const [newCredit, setNewCredit] = useState({
     description: '',
     totalAmount: '',
@@ -187,23 +191,17 @@ const App: React.FC = () => {
     description: string;
     monthlyAmount: number;
   }
-  const [manualSubscriptions, setManualSubscriptions] = useState<MonthlySubscriptionEntry[]>(() =>
-    loadFromStorage('financeai_subscriptions', [])
-  );
+  const [manualSubscriptions, setManualSubscriptions] = useState<MonthlySubscriptionEntry[]>([]);
   const [newSubscription, setNewSubscription] = useState({
     description: '',
     monthlyAmount: ''
   });
 
   // Calendar tasks state
-  const [calendarTasks, setCalendarTasks] = useState<CalendarTask[]>(() =>
-    loadFromStorage('financeai_calendar_tasks', [])
-  );
+  const [calendarTasks, setCalendarTasks] = useState<CalendarTask[]>([]);
 
   // Savings projection state
-  const [savingsProjection, setSavingsProjection] = useState<SavingsProjectionEntry[]>(() =>
-    loadFromStorage('financeai_savings_projection', [])
-  );
+  const [savingsProjection, setSavingsProjection] = useState<SavingsProjectionEntry[]>([]);
   const [newProjection, setNewProjection] = useState({
     monthKey: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
     usadoNecesidades: '',
@@ -218,71 +216,104 @@ const App: React.FC = () => {
   });
 
   // Savings projects state
-  const [savingsProjects, setSavingsProjects] = useState<SavingsProject[]>(() =>
-    loadFromStorage('financeai_savings_projects', [])
-  );
+  const [savingsProjects, setSavingsProjects] = useState<SavingsProject[]>([]);
   const [newProject, setNewProject] = useState({
     name: '',
     targetAmount: '',
     targetDate: ''
   });
 
-  // Save to localStorage when data changes
-  useEffect(() => {
-    localStorage.setItem('financeai_transactions', JSON.stringify(transactions));
-  }, [transactions]);
-
-  useEffect(() => {
-    localStorage.setItem('financeai_credits', JSON.stringify(creditOperations));
-  }, [creditOperations]);
-
-  useEffect(() => {
-    localStorage.setItem('financeai_subscriptions', JSON.stringify(manualSubscriptions));
-  }, [manualSubscriptions]);
-
-  useEffect(() => {
-    localStorage.setItem('financeai_calendar_tasks', JSON.stringify(calendarTasks));
-  }, [calendarTasks]);
-
-  useEffect(() => {
-    localStorage.setItem('financeai_savings_projects', JSON.stringify(savingsProjects));
-  }, [savingsProjects]);
-
-  useEffect(() => {
-    localStorage.setItem('financeai_savings_projection', JSON.stringify(savingsProjection));
-  }, [savingsProjection]);
-
   // Imported files state
-  const [importedFiles, setImportedFiles] = useState<ImportedFile[]>(() =>
-    loadFromStorage('financeai_imported_files', [])
-  );
-
-  // Save imported files to localStorage
-  useEffect(() => {
-    localStorage.setItem('financeai_imported_files', JSON.stringify(importedFiles));
-  }, [importedFiles]);
+  const [importedFiles, setImportedFiles] = useState<ImportedFile[]>([]);
 
   // User name state
-  const [userName, setUserName] = useState<string>(() =>
-    loadFromStorage('financeai_username', '')
-  );
+  const [userName, setUserName] = useState<string>('');
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showEditName, setShowEditName] = useState(false);
   const [tempName, setTempName] = useState('');
 
+  // Load all user data when user changes (login/logout)
+  useEffect(() => {
+    if (user?.id) {
+      // Load user-specific data from localStorage
+      setTransactions(loadFromStorage('transactions', []));
+      setCreditOperations(loadFromStorage('credits', []));
+      setManualSubscriptions(loadFromStorage('subscriptions', []));
+      setCalendarTasks(loadFromStorage('calendar_tasks', []));
+      setSavingsProjects(loadFromStorage('savings_projects', []));
+      setSavingsProjection(loadFromStorage('savings_projection', []));
+      setImportedFiles(loadFromStorage('imported_files', []));
+      setUserName(loadFromStorage('username', ''));
+    } else {
+      // User logged out - clear all state
+      setTransactions([]);
+      setCreditOperations([]);
+      setManualSubscriptions([]);
+      setCalendarTasks([]);
+      setSavingsProjects([]);
+      setSavingsProjection([]);
+      setImportedFiles([]);
+      setUserName('');
+    }
+  }, [user?.id, loadFromStorage]);
+
+  // Save to localStorage when data changes (only if user is logged in)
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem(getStorageKey('transactions'), JSON.stringify(transactions));
+    }
+  }, [transactions, user?.id, getStorageKey]);
+
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem(getStorageKey('credits'), JSON.stringify(creditOperations));
+    }
+  }, [creditOperations, user?.id, getStorageKey]);
+
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem(getStorageKey('subscriptions'), JSON.stringify(manualSubscriptions));
+    }
+  }, [manualSubscriptions, user?.id, getStorageKey]);
+
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem(getStorageKey('calendar_tasks'), JSON.stringify(calendarTasks));
+    }
+  }, [calendarTasks, user?.id, getStorageKey]);
+
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem(getStorageKey('savings_projects'), JSON.stringify(savingsProjects));
+    }
+  }, [savingsProjects, user?.id, getStorageKey]);
+
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem(getStorageKey('savings_projection'), JSON.stringify(savingsProjection));
+    }
+  }, [savingsProjection, user?.id, getStorageKey]);
+
+  // Save imported files to localStorage
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem(getStorageKey('imported_files'), JSON.stringify(importedFiles));
+    }
+  }, [importedFiles, user?.id, getStorageKey]);
+
   // Show welcome modal if no username is set
   useEffect(() => {
-    if (!userName) {
+    if (user?.id && !userName) {
       setShowWelcomeModal(true);
     }
-  }, []);
+  }, [user?.id, userName]);
 
   // Save username to localStorage
   useEffect(() => {
-    if (userName) {
-      localStorage.setItem('financeai_username', JSON.stringify(userName));
+    if (user?.id && userName) {
+      localStorage.setItem(getStorageKey('username'), JSON.stringify(userName));
     }
-  }, [userName]);
+  }, [userName, user?.id, getStorageKey]);
 
   const handleSaveName = () => {
     if (tempName.trim()) {
