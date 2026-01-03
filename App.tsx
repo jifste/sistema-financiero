@@ -49,7 +49,11 @@ import {
   Download,
   PiggyBank,
   LogOut,
-  Menu
+  Menu,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 
@@ -67,6 +71,14 @@ import { FinancialHealthGauge } from './components/FinancialHealthGauge';
 import { SnowballSimulator } from './components/SnowballSimulator';
 import { AIChat } from './components/AIChat';
 import { useAuth } from './src/contexts/AuthContext';
+import {
+  loadUserData,
+  saveUserData,
+  migrateFromLocalStorage,
+  UserData,
+  SyncStatus,
+  isOnline
+} from './src/services/supabaseData';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -234,30 +246,125 @@ const App: React.FC = () => {
   const [showEditName, setShowEditName] = useState(false);
   const [tempName, setTempName] = useState('');
 
-  // Load all user data when user changes (login/logout)
+  // Cloud sync state
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load all user data when user changes (login/logout) - NOW FROM SUPABASE
   useEffect(() => {
-    if (user?.id) {
-      // Load user-specific data from localStorage
-      setTransactions(loadFromStorage('transactions', []));
-      setCreditOperations(loadFromStorage('credits', []));
-      setManualSubscriptions(loadFromStorage('subscriptions', []));
-      setCalendarTasks(loadFromStorage('calendar_tasks', []));
-      setSavingsProjects(loadFromStorage('savings_projects', []));
-      setSavingsProjection(loadFromStorage('savings_projection', []));
-      setImportedFiles(loadFromStorage('imported_files', []));
-      setUserName(loadFromStorage('username', ''));
-    } else {
-      // User logged out - clear all state
-      setTransactions([]);
-      setCreditOperations([]);
-      setManualSubscriptions([]);
-      setCalendarTasks([]);
-      setSavingsProjects([]);
-      setSavingsProjection([]);
-      setImportedFiles([]);
-      setUserName('');
-    }
+    const loadData = async () => {
+      if (user?.id) {
+        setIsLoadingData(true);
+        setSyncStatus('syncing');
+
+        try {
+          // Try to load from Supabase first
+          let cloudData = await loadUserData(user.id);
+
+          // If no cloud data, check for localStorage data to migrate
+          if (!cloudData || (cloudData.transactions.length === 0 && loadFromStorage('transactions', []).length > 0)) {
+            console.log('📤 Checking for localStorage data to migrate...');
+            const migrated = await migrateFromLocalStorage(user.id);
+            if (migrated) {
+              cloudData = migrated;
+            }
+          }
+
+          if (cloudData) {
+            setTransactions(cloudData.transactions);
+            setCreditOperations(cloudData.creditOperations);
+            setManualSubscriptions(cloudData.manualSubscriptions);
+            setCalendarTasks(cloudData.calendarTasks);
+            setSavingsProjects(cloudData.savingsProjects);
+            setSavingsProjection(cloudData.savingsProjection);
+            setImportedFiles(cloudData.importedFiles);
+            setUserName(cloudData.userName);
+          }
+
+          setSyncStatus('synced');
+          setLastSyncTime(new Date());
+        } catch (error) {
+          console.error('Error loading data:', error);
+          setSyncStatus(isOnline() ? 'error' : 'offline');
+
+          // Fallback to localStorage
+          setTransactions(loadFromStorage('transactions', []));
+          setCreditOperations(loadFromStorage('credits', []));
+          setManualSubscriptions(loadFromStorage('subscriptions', []));
+          setCalendarTasks(loadFromStorage('calendar_tasks', []));
+          setSavingsProjects(loadFromStorage('savings_projects', []));
+          setSavingsProjection(loadFromStorage('savings_projection', []));
+          setImportedFiles(loadFromStorage('imported_files', []));
+          setUserName(loadFromStorage('username', ''));
+        } finally {
+          setIsLoadingData(false);
+        }
+      } else {
+        // User logged out - clear all state
+        setTransactions([]);
+        setCreditOperations([]);
+        setManualSubscriptions([]);
+        setCalendarTasks([]);
+        setSavingsProjects([]);
+        setSavingsProjection([]);
+        setImportedFiles([]);
+        setUserName('');
+        setSyncStatus('idle');
+      }
+    };
+
+    loadData();
   }, [user?.id, loadFromStorage]);
+
+  // Debounced save to Supabase when data changes
+  const saveToCloud = useCallback(async () => {
+    if (!user?.id) return;
+
+    setSyncStatus('syncing');
+
+    const userData: UserData = {
+      transactions,
+      creditOperations,
+      manualSubscriptions,
+      calendarTasks,
+      savingsProjects,
+      savingsProjection,
+      importedFiles,
+      userName
+    };
+
+    const success = await saveUserData(user.id, userData);
+
+    if (success) {
+      setSyncStatus('synced');
+      setLastSyncTime(new Date());
+    } else {
+      setSyncStatus(isOnline() ? 'error' : 'offline');
+    }
+  }, [user?.id, transactions, creditOperations, manualSubscriptions, calendarTasks, savingsProjects, savingsProjection, importedFiles, userName]);
+
+  // Auto-save to cloud with debounce (wait 2 seconds after last change)
+  useEffect(() => {
+    if (!user?.id || isLoadingData) return;
+
+    // Clear previous timeout
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+
+    // Set new timeout to save
+    syncTimeoutRef.current = setTimeout(() => {
+      saveToCloud();
+    }, 2000);
+
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
+  }, [transactions, creditOperations, manualSubscriptions, calendarTasks, savingsProjects, savingsProjection, importedFiles, userName, user?.id, isLoadingData, saveToCloud]);
 
   // Save to localStorage when data changes (only if user is logged in)
   useEffect(() => {
@@ -1364,12 +1471,12 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-[#F8FAFC] flex">
         {/* Mobile sidebar overlay */}
         {isMobileSidebarOpen && (
-          <div 
+          <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
             onClick={() => setIsMobileSidebarOpen(false)}
           />
         )}
-        
+
         {/* Sidebar */}
         <aside className={`w-72 bg-white border-r border-slate-100 p-8 flex flex-col fixed h-full z-50 transition-transform duration-300 ease-in-out lg:translate-x-0 ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center gap-3 mb-10">
@@ -1459,6 +1566,33 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto">
+              {/* Cloud Sync Status Indicator */}
+              <div className="flex items-center gap-1.5" title={lastSyncTime ? `Última sync: ${lastSyncTime.toLocaleTimeString('es-CL')}` : 'Sin sincronizar'}>
+                {syncStatus === 'syncing' && (
+                  <div className="flex items-center gap-1 text-indigo-600">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-xs hidden sm:inline">Sincronizando...</span>
+                  </div>
+                )}
+                {syncStatus === 'synced' && (
+                  <div className="flex items-center gap-1 text-green-600">
+                    <Cloud size={16} />
+                    <span className="text-xs hidden sm:inline">Sincronizado</span>
+                  </div>
+                )}
+                {syncStatus === 'offline' && (
+                  <div className="flex items-center gap-1 text-amber-600">
+                    <CloudOff size={16} />
+                    <span className="text-xs hidden sm:inline">Sin conexión</span>
+                  </div>
+                )}
+                {syncStatus === 'error' && (
+                  <div className="flex items-center gap-1 text-red-500">
+                    <CloudOff size={16} />
+                    <span className="text-xs hidden sm:inline">Error sync</span>
+                  </div>
+                )}
+              </div>
               {importStatus && (
                 <span className="text-xs sm:text-sm font-medium text-indigo-600 bg-indigo-50 px-2 sm:px-3 py-1 rounded-lg truncate max-w-[150px] sm:max-w-none">
                   {importStatus}
@@ -1483,8 +1617,22 @@ const App: React.FC = () => {
             </div>
           </header>
 
+          {/* Loading State */}
+          {isLoadingData && (
+            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100">
+              <div className="p-6 bg-indigo-50 rounded-full mb-6">
+                <Cloud size={48} className="text-indigo-600 animate-pulse" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-800 mb-2">Cargando tus datos...</h2>
+              <p className="text-slate-500 text-center max-w-md flex items-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                Sincronizando desde la nube
+              </p>
+            </div>
+          )}
+
           {/* Tab Content */}
-          {activeTab === 'resumen' && transactions.length === 0 && (
+          {!isLoadingData && activeTab === 'resumen' && transactions.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100">
               <div className="p-6 bg-indigo-50 rounded-full mb-6">
                 <FileSpreadsheet size={48} className="text-indigo-600" />
@@ -1503,7 +1651,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'resumen' && transactions.length > 0 && (
+          {!isLoadingData && activeTab === 'resumen' && transactions.length > 0 && (
             <>
               {/* Top KPIs */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
