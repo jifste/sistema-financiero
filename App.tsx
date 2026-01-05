@@ -55,7 +55,10 @@ import {
   RefreshCw,
   Loader2,
   MessageSquare,
-  Bell
+  Bell,
+  Settings,
+  AlertTriangle,
+  Trash2
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 
@@ -463,6 +466,56 @@ const App: React.FC = () => {
       setShowWelcomeModal(false);
       setShowEditName(false);
       setTempName('');
+    }
+  };
+
+  /**
+   * ELIMINAR CUENTA (Derecho al Olvido - Ley 21.719)
+   * Borra permanentemente todos los datos del usuario de Supabase y local.
+   */
+  const handleDeleteAccount = async () => {
+    // 1. Double confirmation for security
+    const confirm1 = window.confirm('⚠️ ¿ESTÁS SEGURO? Esta acción borrará PERMANENTEMENTE todos tus datos, transacciones e historial. No se puede deshacer.');
+    if (!confirm1) return;
+
+    const confirm2 = window.prompt('Para confirmar, escribe "ELIMINAR" en mayúsculas:');
+    if (confirm2 !== 'ELIMINAR') {
+      alert('Cancelado. El texto de confirmación no coincide.');
+      return;
+    }
+
+    try {
+      if (!user?.id) throw new Error('No hay usuario identificado');
+
+      // 2. Delete data from Supabase (Cascade delete manually to be safe)
+      const tables = [
+        'transactions',
+        'credit_operations',
+        'manual_subscriptions',
+        'calendar_tasks',
+        'projects',
+        'savings_projection',
+        'imported_files',
+        'user_settings'
+      ];
+
+      // Delete from all tables concurrently
+      await Promise.all(tables.map(table =>
+        supabase.from(table).delete().eq('user_id', user.id)
+      ));
+
+      // 3. Clear Local Storage
+      localStorage.clear();
+
+      // 4. Sign Out
+      await supabase.auth.signOut();
+
+      // 5. Force Reload/Redirect
+      window.location.href = '/';
+
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      alert('Hubo un error al eliminar tu cuenta. Por favor contacta a soporte.');
     }
   };
 
@@ -1565,33 +1618,68 @@ const App: React.FC = () => {
       )}
 
       {/* Edit Name Popup */}
+      {/* Settings / Configuration Modal */}
       {showEditName && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Cambiar nombre</h3>
-            <input
-              type="text"
-              value={tempName}
-              onChange={(e) => setTempName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-              placeholder={userName}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-              autoFocus
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setShowEditName(false); setTempName(''); }}
-                className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-medium hover:bg-slate-200 transition-all"
-              >
-                Cancelar
+          <div className="bg-white rounded-2xl max-w-md w-full mx-4 shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Settings size={20} className="text-slate-500" />
+                Configuración
+              </h3>
+              <button onClick={() => setShowEditName(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
               </button>
-              <button
-                onClick={handleSaveName}
-                disabled={!tempName.trim()}
-                className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all disabled:opacity-50"
-              >
-                Guardar
-              </button>
+            </div>
+
+            <div className="p-6 space-y-8">
+              {/* Profile Section */}
+              <section>
+                <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Perfil</h4>
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-slate-700">Tu Nombre</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      placeholder={userName}
+                      className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      onClick={handleSaveName}
+                      disabled={!tempName.trim() || tempName === userName}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Guardar
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              {/* Danger Zone */}
+              <section className="pt-6 border-t border-slate-100">
+                <h4 className="text-sm font-semibold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <AlertTriangle size={16} />
+                  Zona de Peligro
+                </h4>
+
+                <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-4">
+                  <p className="text-sm text-red-800 font-medium">Eliminar Cuenta</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    Esta acción es irreversible. Se borrarán todos tus datos personales, transacciones e historial de forma permanente.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleDeleteAccount}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border-2 border-red-100 text-red-600 rounded-xl text-sm font-bold hover:bg-red-50 hover:border-red-200 transition-all"
+                >
+                  <Trash2 size={18} />
+                  Eliminar mi cuenta y mis datos
+                </button>
+              </section>
             </div>
           </div>
         </div>
