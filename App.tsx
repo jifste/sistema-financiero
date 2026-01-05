@@ -1293,7 +1293,7 @@ const App: React.FC = () => {
   // Calculate income (abonos) and expenses (cargos) from imported transactions
   const totalIncome = useMemo(() => {
     return transactions
-      .filter(t => t.isIncome === true)
+      .filter(t => t.isIncome === true && !t.isExcluded)
       .reduce((sum, t) => sum + t.amount, 0);
   }, [transactions]);
 
@@ -2662,6 +2662,56 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Sección de Ingresos - para excluir abonos que no son sueldo */}
+              {transactions.filter(t => t.isIncome).length > 0 && (
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 bg-green-50">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-lg font-semibold text-green-800">💰 Ingresos del Mes</h3>
+                      <span className="text-sm text-green-600">
+                        Total activo: ${transactions.filter(t => t.isIncome && !t.isExcluded).reduce((sum, t) => sum + t.amount, 0).toLocaleString('es-CL')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-green-600 mt-1">Excluye los abonos que no son tu sueldo real (préstamos de amigos, transferencias propias, etc.)</p>
+                  </div>
+                  <div className="max-h-[200px] overflow-y-auto">
+                    {transactions
+                      .filter(t => t.isIncome)
+                      .map(t => (
+                        <div key={t.id} className={`grid grid-cols-12 gap-4 items-center p-4 border-b border-slate-50 ${t.isExcluded ? 'bg-slate-100 opacity-60' : 'hover:bg-green-25'
+                          }`}>
+                          <div className="col-span-1 text-xs text-slate-500">
+                            {typeof t.date === 'string' && t.date.includes('-')
+                              ? new Date(t.date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })
+                              : t.date}
+                          </div>
+                          <div className="col-span-5">
+                            <p className={`text-sm font-medium truncate ${t.isExcluded ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                              {t.description}
+                            </p>
+                          </div>
+                          <div className="col-span-3 text-right">
+                            <span className={`font-bold ${t.isExcluded ? 'text-slate-400' : 'text-green-600'}`}>
+                              +${t.amount.toLocaleString('es-CL')}
+                            </span>
+                          </div>
+                          <div className="col-span-3 flex justify-end">
+                            <button
+                              onClick={() => toggleTransactionExcluded(t.id)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.isExcluded
+                                  ? 'bg-green-100 text-green-600 hover:bg-green-200'
+                                  : 'bg-slate-100 text-slate-500 hover:bg-red-100 hover:text-red-600'
+                                }`}
+                            >
+                              {t.isExcluded ? '↩ Incluir' : '✕ Excluir'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
 
               {/* Tabla de gastos para categorizar */}
               <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
