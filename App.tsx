@@ -54,7 +54,8 @@ import {
   CloudOff,
   RefreshCw,
   Loader2,
-  MessageSquare
+  MessageSquare,
+  Bell
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 
@@ -1702,14 +1703,8 @@ const App: React.FC = () => {
           </nav>
 
           <div className="mt-auto">
-            <div className="p-3 bg-slate-100 rounded-2xl text-slate-600 text-center">
-              <p className="text-xs font-medium">FinanceAI Pro v2.1.0</p>
-              <button
-                onClick={() => setShowUpdateModal(true)}
-                className="text-xs text-indigo-600 hover:text-indigo-800 underline mt-1"
-              >
-                Ver novedades
-              </button>
+            <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 text-center">
+              <p className="text-[10px] font-medium tracking-wide">FINANCEAI PRO v2.1.0</p>
             </div>
           </div>
         </aside>
@@ -1751,6 +1746,17 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto">
+              {/* Novedades / Update Bell */}
+              <button
+                onClick={() => setShowUpdateModal(true)}
+                className="relative p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm group"
+                title="Novedades"
+              >
+                <Bell size={20} className="text-slate-500 group-hover:text-indigo-600" />
+                <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full"></span>
+                <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full animate-ping opacity-75"></span>
+              </button>
+
               {/* Cloud Sync Status Indicator */}
               <div className="flex items-center gap-1.5" title={lastSyncTime ? `Última sync: ${lastSyncTime.toLocaleTimeString('es-CL')}` : 'Sin sincronizar'}>
                 {syncStatus === 'syncing' && (
