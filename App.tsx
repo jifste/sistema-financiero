@@ -635,14 +635,35 @@ const App: React.FC = () => {
       doc.setTextColor(40, 40, 40);
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
-      doc.text(`Usuario: ${userName || user?.email || 'Anónimo'}`, 20, 55);
+      doc.text(`Perfil del Cliente`, 20, 55);
 
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 100, 100);
-      doc.text('Este documento contiene un resumen de tu estado financiero actual, incluyendo ingresos, gastos y metas.', 20, 62);
+      doc.setTextColor(60, 60, 60);
 
-      let yPos = 75;
+      // Datos personales
+      const leftColX = 20;
+      const rightColX = pageWidth / 2 + 10;
+      let currentY = 63;
+
+      // Columna Izquierda
+      doc.text(`Nombre: ${userProfile?.fullName || userName || 'No registrado'}`, leftColX, currentY);
+      currentY += 6;
+      doc.text(`RUT: ${userProfile?.rut || 'No registrado'}`, leftColX, currentY);
+      currentY += 6;
+      doc.text(`Email: ${userProfile?.email || user?.email || 'No registrado'}`, leftColX, currentY);
+      currentY += 6;
+      doc.text(`Teléfono: ${userProfile?.phone || 'No registrado'}`, leftColX, currentY);
+
+      // Reset Y for Right Column
+      currentY = 63;
+      doc.text(`Profesión: ${userProfile?.profession || 'No registrado'}`, rightColX, currentY);
+      currentY += 6;
+      doc.text(`Dirección: ${userProfile?.address || 'No registrado'}`, rightColX, currentY);
+      currentY += 6;
+      doc.text(`Fecha Nac.: ${userProfile?.birthDate || 'No registrado'}`, rightColX, currentY);
+
+      let yPos = 95; // Adjusted start position for table
 
       // -- RESUMEN FINANCIERO (Cards) --
       // Safety check: ensure we have data to calculate
