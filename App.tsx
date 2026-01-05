@@ -379,7 +379,8 @@ const App: React.FC = () => {
       savingsProjects,
       savingsProjection,
       importedFiles,
-      userName
+      userName,
+      profile: userProfile // Add profile to saved data
     };
 
     const success = await saveUserData(user.id, userData);
@@ -390,7 +391,7 @@ const App: React.FC = () => {
     } else {
       setSyncStatus(isOnline() ? 'error' : 'offline');
     }
-  }, [user?.id, transactions, creditOperations, manualSubscriptions, calendarTasks, savingsProjects, savingsProjection, importedFiles, userName]);
+  }, [user?.id, transactions, creditOperations, manualSubscriptions, calendarTasks, savingsProjects, savingsProjection, importedFiles, userName, userProfile]);
 
   // Auto-save to cloud with debounce (wait 2 seconds after last change)
   useEffect(() => {
@@ -411,7 +412,7 @@ const App: React.FC = () => {
         clearTimeout(syncTimeoutRef.current);
       }
     };
-  }, [transactions, creditOperations, manualSubscriptions, calendarTasks, savingsProjects, savingsProjection, importedFiles, userName, user?.id, isLoadingData, saveToCloud]);
+  }, [transactions, creditOperations, manualSubscriptions, calendarTasks, savingsProjects, savingsProjection, importedFiles, userName, userProfile, user?.id, isLoadingData, saveToCloud]);
 
   // Migrate transaction hashes for deduplication (run once after data loads)
   useEffect(() => {
@@ -2174,8 +2175,9 @@ const App: React.FC = () => {
               }}
               setUserData={(newUserData) => {
                 if (typeof newUserData === 'function') return;
-                // Update local states
+                // Sync name if changed
                 if (newUserData.userName !== userName) setUserName(newUserData.userName);
+                // Sync profile if present
                 if (newUserData.profile) setUserProfile(newUserData.profile);
               }}
               userId={user?.id}
