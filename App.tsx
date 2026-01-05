@@ -366,6 +366,35 @@ const App: React.FC = () => {
     };
   }, [transactions, creditOperations, manualSubscriptions, calendarTasks, savingsProjects, savingsProjection, importedFiles, userName, user?.id, isLoadingData, saveToCloud]);
 
+  // Migrate transaction hashes for deduplication (run once after data loads)
+  useEffect(() => {
+    if (!isLoadingData && transactions.length > 0) {
+      // Check if any transactions are missing hashes
+      const needsHashMigration = transactions.some(t => !t.hash);
+
+      if (needsHashMigration) {
+        console.log('📝 Migrating transaction hashes for deduplication...');
+        setTransactions(prev => prev.map(t => {
+          if (!t.hash) {
+            const normalizedDate = (t.date || '').split('T')[0];
+            const normalizedDesc = (t.description || '').toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 50);
+            const normalizedAmount = Math.abs(t.amount).toFixed(0);
+            const combined = `${normalizedDate}|${normalizedDesc}|${normalizedAmount}`;
+            let hash: string;
+            try {
+              hash = btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
+            } catch {
+              hash = combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
+            }
+            return { ...t, hash };
+          }
+          return t;
+        }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoadingData]); // Only run when loading state changes
+
   // Save to localStorage when data changes (only if user is logged in)
   useEffect(() => {
     if (user?.id) {
@@ -433,6 +462,34 @@ const App: React.FC = () => {
     }
   };
 
+  // Migrate existing transactions to add hashes (for deduplication)
+  // This ensures old transactions without hashes get them for future imports
+  const migrateTransactionHashes = useCallback((txs: Transaction[]): Transaction[] => {
+    let needsMigration = false;
+    const migrated = txs.map(t => {
+      if (!t.hash) {
+        needsMigration = true;
+        const normalizedDate = (t.date || '').split('T')[0];
+        const normalizedDesc = (t.description || '').toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 50);
+        const normalizedAmount = Math.abs(t.amount).toFixed(0);
+        const combined = `${normalizedDate}|${normalizedDesc}|${normalizedAmount}`;
+        let hash: string;
+        try {
+          hash = btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
+        } catch {
+          hash = combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
+        }
+        return { ...t, hash };
+      }
+      return t;
+    });
+
+    if (needsMigration) {
+      console.log('📝 Migrated transaction hashes for deduplication');
+    }
+    return migrated;
+  }, []);
+
   // Convert row data to Transaction
   const rowToTransaction = (row: any, index: number): Transaction => ({
     id: `imported-${Date.now()}-${index}`,
@@ -449,6 +506,22 @@ const App: React.FC = () => {
     const utcDays = Math.floor(serial - 25569);
     const date = new Date(utcDays * 86400 * 1000);
     return date.toISOString().split('T')[0];
+  };
+
+  // Generate unique hash for transaction deduplication
+  // This allows identifying the same transaction across imports
+  const generateTransactionHash = (date: string, description: string, amount: number): string => {
+    const normalizedDate = (date || '').split('T')[0]; // Solo fecha, sin hora
+    const normalizedDesc = (description || '').toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 50);
+    const normalizedAmount = Math.abs(amount).toFixed(0);
+    const combined = `${normalizedDate}|${normalizedDesc}|${normalizedAmount}`;
+    // Create a simple hash using btoa and clean it
+    try {
+      return btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
+    } catch {
+      // Fallback for non-ASCII characters
+      return combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
+    }
   };
 
   // Excel Import Handler - supports Chilean bank statements
@@ -535,12 +608,15 @@ const App: React.FC = () => {
       }
 
       if (amount > 0) {
+        const txDate = dateStr || new Date().toISOString();
+        const txHash = generateTransactionHash(txDate, desc, amount);
         const txId = `excel-${Date.now()}-${i}`;
         importedTransactions.push({
           id: txId,
+          hash: txHash,  // Hash for deduplication
           description: desc,
           amount: amount,
-          date: dateStr || new Date().toISOString(),
+          date: txDate,
           category: undefined,  // Sin categorizar
           subCategory: isIncome ? 'Ingreso' : 'Gasto',
           isInstallment: false,
@@ -549,12 +625,33 @@ const App: React.FC = () => {
       }
     }
 
-    setTransactions(prev => [...importedTransactions, ...prev]);
+    // DEDUPLICATION: Only add transactions that don't already exist
+    // This preserves categorizations on existing transactions
+    setTransactions(prev => {
+      // Build set of existing hashes (for transactions that have hash)
+      const existingHashes = new Set(
+        prev.filter(t => t.hash).map(t => t.hash)
+      );
+
+      // Filter out transactions that already exist
+      const newTransactions = importedTransactions.filter(t => !existingHashes.has(t.hash));
+
+      // Return: new transactions first, then existing (preserves order)
+      return [...newTransactions, ...prev];
+    });
+
+    // Count only the NEW transactions that were actually added
+    const existingHashSet = new Set(transactions.filter(t => t.hash).map(t => t.hash));
+    const actuallyNewIds = importedTransactions
+      .filter(t => !existingHashSet.has(t.hash))
+      .map(t => t.id);
+
     return {
-      count: importedTransactions.length,
-      ids: importedTransactions.map(t => t.id)
+      count: actuallyNewIds.length,
+      ids: actuallyNewIds
     };
   };
+
 
   // PDF Import Handler (extracts text and tries to parse transactions)
   const handlePDFImport = async (file: File) => {
@@ -583,11 +680,16 @@ const App: React.FC = () => {
       if (amounts && amounts.length > 0) {
         const amount = parseFloat(amounts[amounts.length - 1].replace(/[$,\s]/g, ''));
         if (amount > 0 && amount < 100000000) {
+          const txDate = dates?.[0] || new Date().toISOString();
+          const txDesc = line.substring(0, 50).replace(/[\d$,.-]/g, '').trim() || 'Transacción PDF';
+          const txHash = generateTransactionHash(txDate, txDesc, amount);
+
           importedTransactions.push({
             id: `pdf-${Date.now()}-${index}`,
-            description: line.substring(0, 50).replace(/[\d$,.-]/g, '').trim() || 'Transacción PDF',
+            hash: txHash,  // Hash for deduplication
+            description: txDesc,
             amount: Math.abs(amount),
-            date: dates?.[0] || new Date().toISOString(),
+            date: txDate,
             category: undefined,  // Sin categorizar
             subCategory: 'Importado PDF',
             isInstallment: false
@@ -596,10 +698,24 @@ const App: React.FC = () => {
       }
     });
 
-    setTransactions(prev => [...importedTransactions, ...prev]);
+    // DEDUPLICATION: Only add transactions that don't already exist
+    setTransactions(prev => {
+      const existingHashes = new Set(
+        prev.filter(t => t.hash).map(t => t.hash)
+      );
+      const newTransactions = importedTransactions.filter(t => !existingHashes.has(t.hash));
+      return [...newTransactions, ...prev];
+    });
+
+    // Count only NEW transactions
+    const existingHashSet = new Set(transactions.filter(t => t.hash).map(t => t.hash));
+    const actuallyNewIds = importedTransactions
+      .filter(t => !existingHashSet.has(t.hash))
+      .map(t => t.id);
+
     return {
-      count: importedTransactions.length,
-      ids: importedTransactions.map(t => t.id)
+      count: actuallyNewIds.length,
+      ids: actuallyNewIds
     };
   };
 

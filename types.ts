@@ -7,6 +7,7 @@ export enum CategoryType {
 
 export interface Transaction {
   id: string;
+  hash?: string;  // Unique hash for deduplication (date+description+amount)
   date: string;
   description: string;
   amount: number;
