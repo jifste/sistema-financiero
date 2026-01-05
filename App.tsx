@@ -256,7 +256,6 @@ const App: React.FC = () => {
 
   // User name state
   const [userName, setUserName] = useState<string>('');
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showEditName, setShowEditName] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [tempName, setTempName] = useState('');
@@ -456,12 +455,7 @@ const App: React.FC = () => {
     }
   }, [importedFiles, user?.id, getStorageKey]);
 
-  // Show welcome modal if no username is set
-  useEffect(() => {
-    if (user?.id && !userName) {
-      setShowWelcomeModal(true);
-    }
-  }, [user?.id, userName]);
+
 
   // Save username to localStorage
   useEffect(() => {
@@ -473,7 +467,6 @@ const App: React.FC = () => {
   const handleSaveName = () => {
     if (tempName.trim()) {
       setUserName(tempName.trim());
-      setShowWelcomeModal(false);
       setShowEditName(false);
       setTempName('');
     }
@@ -1635,35 +1628,7 @@ const App: React.FC = () => {
   return (
     <>
       {/* Welcome Modal for new users */}
-      {showWelcomeModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full mx-4 shadow-2xl">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <TrendingUp className="w-8 h-8 text-indigo-600" />
-              </div>
-              <h2 className="text-2xl font-bold text-slate-900">¡Bienvenido a FinanceAI Pro!</h2>
-              <p className="text-slate-500 mt-2">Ingresa tu nombre para personalizar tu experiencia</p>
-            </div>
-            <input
-              type="text"
-              value={tempName}
-              onChange={(e) => setTempName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-              placeholder="Tu nombre"
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-              autoFocus
-            />
-            <button
-              onClick={handleSaveName}
-              disabled={!tempName.trim()}
-              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Comenzar
-            </button>
-          </div>
-        </div>
-      )}
+
 
       {/* Edit Name Popup */}
       {/* Settings / Configuration Modal */}
