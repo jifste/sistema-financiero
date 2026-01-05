@@ -65,6 +65,15 @@ export interface UserProfile {
   birthDate: string;
 }
 
+export interface Suggestion {
+  id?: string;
+  user_id: string;
+  type: string;
+  description: string;
+  status?: 'pending' | 'reviewed' | 'implemented' | 'rejected';
+  created_at?: string;
+}
+
 export interface UserData {
   transactions: Transaction[];
   creditOperations: CreditOperation[];
@@ -148,6 +157,28 @@ export async function saveUserData(userId: string, userData: UserData): Promise<
     return true;
   } catch (error) {
     console.warn('Failed to save to Supabase (saved to localStorage):', error);
+    return false;
+  }
+}
+
+/**
+ * Submit a new suggestion to the database
+ */
+export async function submitSuggestion(userId: string, type: string, description: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('suggestions')
+      .insert({
+        user_id: userId,
+        type,
+        description,
+        status: 'pending'
+      });
+
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error submitting suggestion:', error);
     return false;
   }
 }

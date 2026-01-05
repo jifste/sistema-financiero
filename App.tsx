@@ -84,6 +84,7 @@ import {
   loadUserData,
   saveUserData,
   migrateFromLocalStorage,
+  submitSuggestion,
   UserData,
   UserProfile,
   SyncStatus,
@@ -250,6 +251,11 @@ const App: React.FC = () => {
 
   // User Profile state
   const [userProfile, setUserProfile] = useState<UserProfile | undefined>(undefined);
+
+  // Suggestions state
+  const [suggestionType, setSuggestionType] = useState('Nueva Funcionalidad');
+  const [suggestionDescription, setSuggestionDescription] = useState('');
+  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
 
   // Imported files state
   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>([]);
@@ -469,6 +475,22 @@ const App: React.FC = () => {
       setUserName(tempName.trim());
       setShowEditName(false);
       setTempName('');
+    }
+  };
+
+  const handleSubmitSuggestion = async () => {
+    if (!suggestionDescription.trim() || !user?.id) return;
+
+    setIsSubmittingSuggestion(true);
+    const success = await submitSuggestion(user.id, suggestionType, suggestionDescription);
+    setIsSubmittingSuggestion(false);
+
+    if (success) {
+      alert('¡Gracias! Tu sugerencia ha sido enviada con éxito.');
+      setSuggestionDescription('');
+      setSuggestionType('Nueva Funcionalidad');
+    } else {
+      alert('Hubo un error al enviar la sugerencia. Por favor intenta de nuevo.');
     }
   };
 
@@ -4450,7 +4472,11 @@ const App: React.FC = () => {
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de sugerencia</label>
-                      <select className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      <select
+                        value={suggestionType}
+                        onChange={(e) => setSuggestionType(e.target.value)}
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
                         <option>Nueva Funcionalidad</option>
                         <option>Mejora de Interfaz</option>
                         <option>Reportar un Error</option>
@@ -4461,12 +4487,25 @@ const App: React.FC = () => {
                       <label className="block text-sm font-medium text-slate-700 mb-1">Descripción</label>
                       <textarea
                         rows={5}
+                        value={suggestionDescription}
+                        onChange={(e) => setSuggestionDescription(e.target.value)}
                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         placeholder="Cuéntanos tu idea en detalle..."
                       ></textarea>
                     </div>
-                    <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all">
-                      Enviar Sugerencia
+                    <button
+                      onClick={handleSubmitSuggestion}
+                      disabled={isSubmittingSuggestion || !suggestionDescription.trim()}
+                      className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all disabled:bg-indigo-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {isSubmittingSuggestion ? (
+                        <>
+                          <Loader2 size={18} className="animate-spin" />
+                          Enviando...
+                        </>
+                      ) : (
+                        'Enviar Sugerencia'
+                      )}
                     </button>
                   </div>
                 </div>
