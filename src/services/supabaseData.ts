@@ -166,7 +166,8 @@ export async function migrateFromLocalStorage(userId: string): Promise<UserData 
     localData.manualSubscriptions.length > 0 ||
     localData.calendarTasks.length > 0 ||
     localData.savingsProjects.length > 0 ||
-    localData.userName !== '';
+    localData.userName !== '' ||
+    localData.profile !== undefined;
 
   if (hasLocalData) {
     console.log('📤 Migrating localStorage data to cloud...');
@@ -198,6 +199,7 @@ function loadFromLocalStorage(userId: string): UserData {
     const savingsProjection = JSON.parse(localStorage.getItem(getStorageKey(userId, 'savings_projection')) || '[]');
     const importedFiles = JSON.parse(localStorage.getItem(getStorageKey(userId, 'imported_files')) || '[]');
     const userName = JSON.parse(localStorage.getItem(getStorageKey(userId, 'username')) || '""');
+    const profile = JSON.parse(localStorage.getItem(getStorageKey(userId, 'profile')) || 'null');
 
     return {
       transactions,
@@ -207,7 +209,8 @@ function loadFromLocalStorage(userId: string): UserData {
       savingsProjects,
       savingsProjection,
       importedFiles,
-      userName
+      userName,
+      profile: profile || undefined
     };
   } catch (error) {
     console.warn('Error loading from localStorage:', error);
@@ -225,6 +228,9 @@ function saveToLocalStorage(userId: string, data: UserData): void {
     localStorage.setItem(getStorageKey(userId, 'savings_projection'), JSON.stringify(data.savingsProjection));
     localStorage.setItem(getStorageKey(userId, 'imported_files'), JSON.stringify(data.importedFiles));
     localStorage.setItem(getStorageKey(userId, 'username'), JSON.stringify(data.userName));
+    if (data.profile) {
+      localStorage.setItem(getStorageKey(userId, 'profile'), JSON.stringify(data.profile));
+    }
   } catch (error) {
     console.warn('Error saving to localStorage:', error);
   }

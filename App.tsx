@@ -85,6 +85,7 @@ import {
   saveUserData,
   migrateFromLocalStorage,
   UserData,
+  UserProfile,
   SyncStatus,
   isOnline
 } from './src/services/supabaseData';
@@ -244,9 +245,11 @@ const App: React.FC = () => {
   const [savingsProjects, setSavingsProjects] = useState<SavingsProject[]>([]);
   const [newProject, setNewProject] = useState({
     name: '',
-    targetAmount: '',
     targetDate: ''
   });
+
+  // User Profile state
+  const [userProfile, setUserProfile] = useState<UserProfile | undefined>(undefined);
 
   // Imported files state
   const [importedFiles, setImportedFiles] = useState<ImportedFile[]>([]);
@@ -294,6 +297,7 @@ const App: React.FC = () => {
             setSavingsProjection(cloudData.savingsProjection);
             setImportedFiles(cloudData.importedFiles);
             setUserName(cloudData.userName);
+            if (cloudData.profile) setUserProfile(cloudData.profile);
           }
 
           setSyncStatus('synced');
@@ -1987,14 +1991,13 @@ const App: React.FC = () => {
               userData={{
                 transactions, creditOperations, manualSubscriptions, calendarTasks,
                 savingsProjects, savingsProjection, importedFiles, userName,
-                profile: (transactions as any).profile // Temporary casting if needed, logic handles it
+                profile: userProfile
               }}
               setUserData={(newUserData) => {
                 if (typeof newUserData === 'function') return;
-                // If userName changed, update local state
+                // Update local states
                 if (newUserData.userName !== userName) setUserName(newUserData.userName);
-                // Full reload/sync might be needed for profile deeper updates if we don't lift state fully, 
-                // but MyDataPage handles its own saving to Supabase.
+                if (newUserData.profile) setUserProfile(newUserData.profile);
               }}
               userId={user?.id}
             />
