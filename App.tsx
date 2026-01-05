@@ -2700,8 +2700,8 @@ const App: React.FC = () => {
                             <button
                               onClick={() => toggleTransactionExcluded(t.id)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.isExcluded
-                                  ? 'bg-green-100 text-green-600 hover:bg-green-200'
-                                  : 'bg-slate-100 text-slate-500 hover:bg-red-100 hover:text-red-600'
+                                ? 'bg-green-100 text-green-600 hover:bg-green-200'
+                                : 'bg-slate-100 text-slate-500 hover:bg-red-100 hover:text-red-600'
                                 }`}
                             >
                               {t.isExcluded ? '↩ Incluir' : '✕ Excluir'}
@@ -3721,13 +3721,24 @@ const App: React.FC = () => {
             const historicalData = (() => {
               const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-              // Get saved months from savingsProjection
-              const savedMonths = savingsProjection.map(entry => ({
-                month: `${monthNames[parseInt(entry.monthKey.split('-')[1]) - 1]} ${entry.monthKey.split('-')[0].slice(-2)}`,
-                monthKey: entry.monthKey,
-                ahorro: entry.restanteAhorro,
-                positivo: entry.restanteAhorro >= 0
-              }));
+              // Get saved months from savingsProjection - calculate TOTAL savings
+              // Total = restanteAhorro + disponibleNecesidades + disponibleDeseos
+              const savedMonths = savingsProjection.map(entry => {
+                // Calculate what was available in necessities and desires for that month
+                // Using the same formula: presupuesto - usado = disponible
+                const presupuestoNecesidades = totalIncome * 0.50; // Note: ideally should use saved income
+                const presupuestoDeseos = totalIncome * 0.30;
+                const disponibleNecesidades = Math.max(0, presupuestoNecesidades - entry.usadoNecesidades);
+                const disponibleDeseos = Math.max(0, presupuestoDeseos - entry.usadoDeseos);
+                const totalAhorroMes = entry.restanteAhorro + disponibleNecesidades + disponibleDeseos;
+
+                return {
+                  month: `${monthNames[parseInt(entry.monthKey.split('-')[1]) - 1]} ${entry.monthKey.split('-')[0].slice(-2)}`,
+                  monthKey: entry.monthKey,
+                  ahorro: totalAhorroMes,
+                  positivo: totalAhorroMes >= 0
+                };
+              });
 
               // Add current month (calculated in real-time) if not already saved
               const currentMonthSaved = savingsProjection.some(p => p.monthKey === currentMonthKey);
