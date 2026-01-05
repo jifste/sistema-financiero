@@ -635,8 +635,8 @@ const App: React.FC = () => {
       let yPos = 75;
 
       // -- RESUMEN FINANCIERO (Cards) --
-      const totalIngresos = monthsData.reduce((acc, m) => acc + m.ingresos, 0) / (monthsData.length || 1);
-      const totalGastos = monthsData.reduce((acc, m) => acc + m.gastos, 0) / (monthsData.length || 1);
+      const totalIngresos = cashFlowProjection.reduce((acc, m) => acc + m.ingresos, 0) / (cashFlowProjection.length || 1);
+      const totalGastos = cashFlowProjection.reduce((acc, m) => acc + m.gastos, 0) / (cashFlowProjection.length || 1);
       const ahorro = totalIngresos - totalGastos;
 
       const summaryData = [
