@@ -597,6 +597,136 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * EXPORTAR REPORTE PDF
+   * Genera un documento PDF profesional con resumen y tablas.
+   */
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.width;
+
+      // -- HEADER --
+      doc.setFillColor(79, 70, 229); // Indigo 600
+      doc.rect(0, 0, pageWidth, 40, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text('FinanceAI Pro', 20, 20);
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Reporte Financiero Personal', 20, 30);
+
+      doc.text(new Date().toLocaleDateString(), pageWidth - 40, 30);
+
+      // -- PERFIL --
+      doc.setTextColor(40, 40, 40);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Usuario: ${userName || user?.email || 'Anónimo'}`, 20, 55);
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      doc.text('Este documento contiene un resumen de tu estado financiero actual, incluyendo ingresos, gastos y metas.', 20, 62);
+
+      let yPos = 75;
+
+      // -- RESUMEN FINANCIERO (Cards) --
+      const totalIngresos = monthsData.reduce((acc, m) => acc + m.ingresos, 0) / (monthsData.length || 1);
+      const totalGastos = monthsData.reduce((acc, m) => acc + m.gastos, 0) / (monthsData.length || 1);
+      const ahorro = totalIngresos - totalGastos;
+
+      const summaryData = [
+        ['Promedio Ingresos', formatCurrency(totalIngresos)],
+        ['Promedio Gastos', formatCurrency(totalGastos)],
+        ['Capacidad Ahorro', formatCurrency(ahorro)]
+      ];
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Concepto', 'Monto Promedio (6 meses)']],
+        body: summaryData,
+        theme: 'grid',
+        headStyles: { fillColor: [79, 70, 229] }, // Indigo
+        styles: { fontSize: 11, cellPadding: 4 },
+        columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 15;
+
+      // -- METAS DE AHORRO --
+      if (savingsProjects.length > 0) {
+        doc.setFontSize(14);
+        doc.setTextColor(40, 40, 40);
+        doc.text('Metas de Ahorro Activas', 20, yPos);
+        yPos += 5;
+
+        const goalsData = savingsProjects.map(p => [
+          p.name,
+          formatCurrency(p.targetAmount),
+          formatCurrency(p.savedAmount),
+          `${Math.round((p.savedAmount / p.targetAmount) * 100)}%`
+        ]);
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Meta', 'Objetivo', 'Ahorrado', 'Progreso']],
+          body: goalsData,
+          theme: 'striped',
+          headStyles: { fillColor: [16, 185, 129] }, // Emerald / Green
+          styles: { fontSize: 10 }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      // -- ÚLTIMOS MOVIMIENTOS --
+      doc.setFontSize(14);
+      doc.setTextColor(40, 40, 40);
+      doc.text('Últimos Movimientos (Top 20)', 20, yPos);
+      yPos += 5;
+
+      const recentTx = transactions
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 20)
+        .map(t => [
+          new Date(t.date).toLocaleDateString(),
+          t.description.substring(0, 30),
+          t.subCategory,
+          t.isIncome ? '+' : '-',
+          formatCurrency(Math.abs(t.amount))
+        ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Fecha', 'Descripción', 'Categoría', 'Tipo', 'Monto']],
+        body: recentTx,
+        theme: 'striped',
+        headStyles: { fillColor: [100, 116, 139] }, // Slate
+        bodyStyles: { textColor: 50 },
+        columnStyles: { 4: { halign: 'right' } }
+      });
+
+      // -- FOOTER --
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text('Generado por FinanceAI Pro - Tu plataforma de control financiero inteligente.', pageWidth / 2, doc.internal.pageSize.height - 10, { align: 'center' });
+      }
+
+      doc.save(`financeai-reporte-${new Date().toISOString().split('T')[0]}.pdf`);
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Hubo un error al generar el reporte PDF.');
+    }
+  };
+
   // Migrate existing transactions to add hashes (for deduplication)
   // This ensures old transactions without hashes get them for future imports
   const migrateTransactionHashes = useCallback((txs: Transaction[]): Transaction[] => {
@@ -1719,13 +1849,23 @@ const App: React.FC = () => {
                   </p>
                 </div>
 
-                <button
-                  onClick={handleExportData}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
-                >
-                  <Download size={18} />
-                  Descargar mis datos (JSON)
-                </button>
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={handleExportData}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
+                  >
+                    <Download size={18} />
+                    Descargar mis datos (JSON)
+                  </button>
+
+                  <button
+                    onClick={handleExportPDF}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                  >
+                    <FileText size={18} />
+                    Descargar Reporte (PDF)
+                  </button>
+                </div>
 
                 <div className="mt-4 text-center">
                   <Link to="/privacy" target="_blank" className="text-xs text-indigo-500 hover:text-indigo-600 font-medium underline">
