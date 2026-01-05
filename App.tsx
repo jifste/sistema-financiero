@@ -580,7 +580,7 @@ const App: React.FC = () => {
         creditOperations,
         manualSubscriptions,
         calendarTasks,
-        projects,
+        savingsProjects,
         savingsProjection
       };
 
