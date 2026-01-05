@@ -56,12 +56,12 @@ import {
   Loader2,
   MessageSquare,
   Bell,
-  Settings,
   AlertTriangle,
   Trash2,
   User,
   Shield
 } from 'lucide-react';
+import { supabase } from './src/lib/supabase'; // Import supabase client
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 import { Link } from 'react-router-dom';
 import { MyDataPage } from './src/components/MyDataPage';
@@ -97,6 +97,16 @@ import { PrivacyPolicy } from './components/PrivacyPolicy';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const INCOME = 6137000;
+
+// Helper function to format currency
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('es-CL', {
+    style: 'currency',
+    currency: 'CLP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(Math.abs(amount));
+};
 
 type TabType = 'resumen' | 'movimientos' | 'cuentas' | 'presupuesto' | 'creditos' | 'calendario' | 'proyectos' | 'historial' | 'ahorro' | 'proyeccion' | 'sugerencias' | 'mis_datos';
 
@@ -635,8 +645,14 @@ const App: React.FC = () => {
       let yPos = 75;
 
       // -- RESUMEN FINANCIERO (Cards) --
-      const totalIngresos = cashFlowProjection.reduce((acc, m) => acc + m.ingresos, 0) / (cashFlowProjection.length || 1);
-      const totalGastos = cashFlowProjection.reduce((acc, m) => acc + m.gastos, 0) / (cashFlowProjection.length || 1);
+      // Safety check: ensure we have data to calculate
+      const projectionData = cashFlowProjection || [];
+      const totalIngresos = projectionData.length > 0
+        ? projectionData.reduce((acc, m) => acc + (m.ingresos || 0), 0) / projectionData.length
+        : 0;
+      const totalGastos = projectionData.length > 0
+        ? projectionData.reduce((acc, m) => acc + (m.gastos || 0), 0) / projectionData.length
+        : 0;
       const ahorro = totalIngresos - totalGastos;
 
       const summaryData = [
