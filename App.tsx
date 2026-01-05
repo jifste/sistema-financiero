@@ -519,6 +519,44 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * EXPORTAR DATOS (Portabilidad - Ley 21.719)
+   * Permite al usuario descargar toda su información en formato JSON.
+   */
+  const handleExportData = () => {
+    try {
+      const dataToExport = {
+        meta: {
+          app: 'FinanceAI Pro',
+          version: '2.1.0',
+          exportDate: new Date().toISOString(),
+          userId: user?.id
+        },
+        profile: {
+          name: userName,
+          email: user?.email
+        },
+        transactions,
+        creditOperations,
+        manualSubscriptions,
+        calendarTasks,
+        projects,
+        savingsProjection
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToExport, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", `financeai-data-${new Date().toISOString().split('T')[0]}.json`);
+      document.body.appendChild(downloadAnchorNode); // required for firefox
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      alert('Error al exportar los datos. Inténtalo de nuevo.');
+    }
+  };
+
   // Migrate existing transactions to add hashes (for deduplication)
   // This ensures old transactions without hashes get them for future imports
   const migrateTransactionHashes = useCallback((txs: Transaction[]): Transaction[] => {
@@ -1656,6 +1694,26 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 </div>
+              </section>
+
+              {/* Privacy & Data Section */}
+              <section className="pt-6 border-t border-slate-100">
+                <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Privacidad y Datos</h4>
+
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 mb-4">
+                  <p className="text-sm text-slate-700 font-medium">Tus datos te pertenecen</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Cumpliendo con la Ley 21.719, puedes descargar una copia completa de tu información financiera.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleExportData}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all"
+                >
+                  <Download size={18} />
+                  Descargar mis datos (JSON)
+                </button>
               </section>
 
               {/* Danger Zone */}
