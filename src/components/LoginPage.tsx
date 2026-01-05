@@ -7,13 +7,19 @@ const LoginPage: React.FC = () => {
     const { signIn, loading } = useAuth();
     const [error, setError] = useState<string | null>(null);
     const [isSigningIn, setIsSigningIn] = useState(false);
-    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [acceptedTerms, setAcceptedTerms] = useState(() => {
+        return localStorage.getItem('financeai_privacy_accepted') === 'true';
+    });
 
     const handleGoogleSignIn = async () => {
         if (!acceptedTerms) {
             setError('Debes aceptar la política de privacidad para continuar.');
             return;
         }
+
+        // Persist acceptance locally
+        localStorage.setItem('financeai_privacy_accepted', 'true');
+
         setError(null);
         setIsSigningIn(true);
         try {

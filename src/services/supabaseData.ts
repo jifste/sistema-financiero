@@ -63,6 +63,7 @@ export interface UserProfile {
   address: string;
   profession: string;
   birthDate: string;
+  privacyAcceptedAt?: string;
 }
 
 export interface Suggestion {

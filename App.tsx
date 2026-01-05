@@ -302,7 +302,22 @@ const App: React.FC = () => {
             setSavingsProjection(cloudData.savingsProjection);
             setImportedFiles(cloudData.importedFiles);
             setUserName(cloudData.userName);
-            if (cloudData.profile) setUserProfile(cloudData.profile);
+
+            // Check if privacy acceptance is recorded
+            let currentProfile = cloudData.profile;
+            if (currentProfile && !currentProfile.privacyAcceptedAt) {
+              // Validating that they are logged in implies they accepted the terms (gatekeeper in LoginPage)
+              currentProfile = {
+                ...currentProfile,
+                privacyAcceptedAt: new Date().toISOString()
+              };
+              // Determine if we need to save this update immediately
+              // We'll update the state, and let the auto-save or a specific save call handle it.
+              // Ideally, triggering a save here ensures the record is kept.
+              saveUserData(user.id, { ...cloudData, profile: currentProfile });
+            }
+
+            if (currentProfile) setUserProfile(currentProfile);
           }
 
           setSyncStatus('synced');
