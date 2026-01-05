@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Sparkles, LogIn, AlertCircle, Loader2, Shield } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const LoginPage: React.FC = () => {
     const { signIn, loading } = useAuth();
     const [error, setError] = useState<string | null>(null);
     const [isSigningIn, setIsSigningIn] = useState(false);
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
 
     const handleGoogleSignIn = async () => {
+        if (!acceptedTerms) {
+            setError('Debes aceptar la política de privacidad para continuar.');
+            return;
+        }
         setError(null);
         setIsSigningIn(true);
         try {
@@ -86,11 +92,30 @@ const LoginPage: React.FC = () => {
                             </div>
                         )}
 
+                        {/* Privacy Consent Checkbox */}
+                        <div className="flex items-start gap-3 mb-6 px-1">
+                            <div className="flex items-center h-5 mt-0.5">
+                                <input
+                                    id="terms"
+                                    type="checkbox"
+                                    checked={acceptedTerms}
+                                    onChange={(e) => {
+                                        setAcceptedTerms(e.target.checked);
+                                        if (e.target.checked) setError(null);
+                                    }}
+                                    className="w-4 h-4 border-slate-600 rounded bg-slate-700/50 text-indigo-500 focus:ring-indigo-500/40 focus:ring-offset-0 cursor-pointer"
+                                />
+                            </div>
+                            <label htmlFor="terms" className="text-sm text-slate-400 leading-tight cursor-pointer select-none">
+                                Acepto la <Link to="/privacy" target="_blank" className="text-indigo-400 hover:text-indigo-300 underline font-medium">Política de Privacidad</Link> y autorizo el tratamiento de mis datos financieros según la Ley 21.719.
+                            </label>
+                        </div>
+
                         {/* Google Sign In Button */}
                         <button
                             onClick={handleGoogleSignIn}
-                            disabled={isSigningIn}
-                            className="w-full py-4 px-6 bg-white hover:bg-gray-100 disabled:bg-gray-200 rounded-xl font-medium text-gray-800 flex items-center justify-center gap-3 transition-all duration-200 shadow-lg hover:shadow-xl disabled:cursor-not-allowed"
+                            disabled={isSigningIn || !acceptedTerms}
+                            className="w-full py-4 px-6 bg-white hover:bg-gray-100 disabled:bg-gray-300 disabled:text-gray-500 rounded-xl font-medium text-gray-800 flex items-center justify-center gap-3 transition-all duration-200 shadow-lg hover:shadow-xl disabled:cursor-not-allowed disabled:shadow-none"
                         >
                             {isSigningIn ? (
                                 <>

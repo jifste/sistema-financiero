@@ -6,6 +6,9 @@ import { AuthProvider } from './src/contexts/AuthContext';
 import { useAuth } from './src/contexts/AuthContext';
 import LoginPage from './src/components/LoginPage';
 
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { PrivacyPolicy } from './components/PrivacyPolicy';
+
 // Wrapper component to handle auth state
 const AppWrapper: React.FC = () => {
   const { user, loading } = useAuth();
@@ -39,7 +42,12 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <AuthProvider>
-      <AppWrapper />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/*" element={<AppWrapper />} />
+        </Routes>
+      </BrowserRouter>
     </AuthProvider>
   </React.StrictMode>
 );

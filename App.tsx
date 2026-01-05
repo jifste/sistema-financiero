@@ -61,6 +61,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
+import { Link } from 'react-router-dom';
 
 import { MOCK_TRANSACTIONS } from './constants';
 import { CategoryType, Transaction } from './types';
@@ -84,6 +85,8 @@ import {
   SyncStatus,
   isOnline
 } from './src/services/supabaseData';
+
+import { PrivacyPolicy } from './components/PrivacyPolicy';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -1714,6 +1717,12 @@ const App: React.FC = () => {
                   <Download size={18} />
                   Descargar mis datos (JSON)
                 </button>
+
+                <div className="mt-4 text-center">
+                  <Link to="/privacy" target="_blank" className="text-xs text-indigo-500 hover:text-indigo-600 font-medium underline">
+                    Ver Política de Privacidad
+                  </Link>
+                </div>
               </section>
 
               {/* Danger Zone */}
