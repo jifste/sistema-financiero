@@ -871,16 +871,17 @@ const App: React.FC = () => {
     setManualSubscriptions(prev => prev.filter(s => s.id !== id));
   };
 
-  // Function to delete an imported file and its transactions
+
+  // Function to delete an imported file entry (preserves transactions!)
+  // Smart delete: removes file from list but keeps transactions with their categorizations
   const deleteImportedFile = (fileId: string) => {
-    const file = importedFiles.find(f => f.id === fileId);
-    if (file) {
-      // Remove all transactions associated with this file
-      setTransactions(prev => prev.filter(t => !file.transactionIds.includes(t.id)));
-      // Remove the file from tracking
-      setImportedFiles(prev => prev.filter(f => f.id !== fileId));
-    }
+    // Only remove the file from tracking, transactions are preserved
+    // This allows users to clean up the file list without losing categorization work
+    setImportedFiles(prev => prev.filter(f => f.id !== fileId));
+    // Note: Transactions are intentionally NOT deleted
+    // They remain available with their categories for deduplication on future imports
   };
+
 
   // Function to clear all transactions (for orphaned data cleanup)
   const clearAllTransactions = () => {
