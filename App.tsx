@@ -1299,7 +1299,7 @@ const App: React.FC = () => {
 
   const totalExpenses = useMemo(() => {
     return transactions
-      .filter(t => t.isIncome === false || t.isIncome === undefined)
+      .filter(t => (t.isIncome === false || t.isIncome === undefined) && !t.isExcluded)
       .reduce((sum, t) => sum + (t.isInstallment ? (t.installmentValue || 0) : t.amount), 0);
   }, [transactions]);
 
