@@ -80,8 +80,8 @@ export const PrivacyPolicy: React.FC = () => {
                             <ul className="list-disc pl-5 space-y-2 text-slate-600 mt-2">
                                 <li><strong>Acceso:</strong> Saber qué datos tenemos de ti (disponible en la app).</li>
                                 <li><strong>Rectificación:</strong> Corregir datos inexactos.</li>
-                                <li><strong>Supresión (Olvido):</strong> Eliminar tu cuenta y todos tus datos (disponible en Configuración > Zona de Peligro).</li>
-                                <li><strong>Portabilidad:</strong> Descargar una copia de todos tus datos (disponible en Configuración > Privacidad).</li>
+                                <li><strong>Supresión (Olvido):</strong> Eliminar tu cuenta y todos tus datos (disponible en Configuración → Zona de Peligro).</li>
+                                <li><strong>Portabilidad:</strong> Descargar una copia de todos tus datos (disponible en Configuración → Privacidad).</li>
                             </ul>
                         </section>
 
