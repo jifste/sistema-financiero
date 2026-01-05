@@ -47,7 +47,7 @@ export const PrivacyPolicy: React.FC = () => {
                             </h3>
                             <p className="text-slate-600 mb-2">Para el funcionamiento de la aplicación, tratamos las siguientes categorías de datos:</p>
                             <ul className="list-disc pl-5 space-y-2 text-slate-600">
-                                <li><strong>Datos de Identificación:</strong> Nombre y correo electrónico (a través de Google Auth).</li>
+                                <li><strong>Datos de Identificación:</strong> Nombre, correo electrónico, RUT/DNI, teléfono, dirección, fecha de nacimiento y profesión (proporcionados voluntariamente en "Mis Datos").</li>
                                 <li><strong>Datos Financieros:</strong> Transacciones, montos, categorías, operaciones de crédito y proyecciones de ahorro.</li>
                                 <li><strong>Datos de Uso:</strong> Preferencias de configuración y ajustes de la aplicación.</li>
                             </ul>
