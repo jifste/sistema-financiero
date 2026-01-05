@@ -801,6 +801,13 @@ const App: React.FC = () => {
     ));
   };
 
+  // Function to toggle transaction exclusion from budget calculations
+  const toggleTransactionExcluded = (id: string) => {
+    setTransactions(prev => prev.map(t =>
+      t.id === id ? { ...t, isExcluded: !t.isExcluded, category: undefined } : t
+    ));
+  };
+
   // Function to add a new credit operation
   const addCreditOperation = () => {
     const total = parseFloat(newCredit.totalAmount) || 0;
@@ -1325,16 +1332,17 @@ const App: React.FC = () => {
     const presupuestoAhorro = totalIncome * 0.20;
 
     const gastadoNecesidades = transactions
-      .filter(t => t.category === CategoryType.NEED && !t.isIncome)
+      .filter(t => t.category === CategoryType.NEED && !t.isIncome && !t.isExcluded)
       .reduce((sum, t) => sum + t.amount, 0);
 
     const gastadoDeseos = transactions
-      .filter(t => t.category === CategoryType.WANT && !t.isIncome)
+      .filter(t => t.category === CategoryType.WANT && !t.isIncome && !t.isExcluded)
       .reduce((sum, t) => sum + t.amount, 0);
 
     const ahorradoActual = transactions
-      .filter(t => t.category === CategoryType.SAVINGS && !t.isIncome)
+      .filter(t => t.category === CategoryType.SAVINGS && !t.isIncome && !t.isExcluded)
       .reduce((sum, t) => sum + t.amount, 0);
+
 
     const restanteAhorro = Math.max(0, presupuestoAhorro - ahorradoActual);
 
@@ -2675,46 +2683,75 @@ const App: React.FC = () => {
                     transactions
                       .filter(t => !t.isIncome)
                       .map(t => (
-                        <div key={t.id} className={`grid grid-cols-12 gap-4 items-center p-4 border-b border-slate-50 ${!t.category ? 'bg-yellow-50' : 'hover:bg-slate-25'}`}>
+                        <div key={t.id} className={`grid grid-cols-12 gap-4 items-center p-4 border-b border-slate-50 ${t.isExcluded
+                          ? 'bg-slate-100 opacity-60'
+                          : !t.category
+                            ? 'bg-yellow-50'
+                            : 'hover:bg-slate-25'
+                          }`}>
                           <div className="col-span-1 text-xs text-slate-500">
                             {typeof t.date === 'string' && t.date.includes('-')
                               ? new Date(t.date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })
                               : t.date}
                           </div>
                           <div className="col-span-4">
-                            <p className="text-sm font-medium text-slate-800 truncate">{t.description}</p>
+                            <p className={`text-sm font-medium truncate ${t.isExcluded ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                              {t.description}
+                            </p>
                           </div>
                           <div className="col-span-2 text-right">
-                            <span className="font-bold text-slate-900">${t.amount.toLocaleString('es-CL')}</span>
+                            <span className={`font-bold ${t.isExcluded ? 'text-slate-400' : 'text-slate-900'}`}>
+                              ${t.amount.toLocaleString('es-CL')}
+                            </span>
                           </div>
                           <div className="col-span-5 flex justify-center gap-2">
-                            <button
-                              onClick={() => updateTransactionCategory(t.id, CategoryType.NEED)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.NEED
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                                }`}
-                            >
-                              50% Necesidad
-                            </button>
-                            <button
-                              onClick={() => updateTransactionCategory(t.id, CategoryType.WANT)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.WANT
-                                ? 'bg-purple-600 text-white shadow-sm'
-                                : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
-                                }`}
-                            >
-                              30% Deseo
-                            </button>
-                            <button
-                              onClick={() => updateTransactionCategory(t.id, CategoryType.SAVINGS)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.SAVINGS
-                                ? 'bg-green-600 text-white shadow-sm'
-                                : 'bg-green-50 text-green-600 hover:bg-green-100'
-                                }`}
-                            >
-                              20% Ahorro
-                            </button>
+                            {t.isExcluded ? (
+                              /* Show reactivate button for excluded transactions */
+                              <button
+                                onClick={() => toggleTransactionExcluded(t.id)}
+                                className="px-4 py-1.5 rounded-lg text-xs font-medium bg-slate-200 text-slate-600 hover:bg-slate-300 transition-all"
+                              >
+                                ↩ Incluir en presupuesto
+                              </button>
+                            ) : (
+                              /* Show category buttons for active transactions */
+                              <>
+                                <button
+                                  onClick={() => updateTransactionCategory(t.id, CategoryType.NEED)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.NEED
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                    }`}
+                                >
+                                  50% Necesidad
+                                </button>
+                                <button
+                                  onClick={() => updateTransactionCategory(t.id, CategoryType.WANT)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.WANT
+                                    ? 'bg-purple-600 text-white shadow-sm'
+                                    : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                                    }`}
+                                >
+                                  30% Deseo
+                                </button>
+                                <button
+                                  onClick={() => updateTransactionCategory(t.id, CategoryType.SAVINGS)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${t.category === CategoryType.SAVINGS
+                                    ? 'bg-green-600 text-white shadow-sm'
+                                    : 'bg-green-50 text-green-600 hover:bg-green-100'
+                                    }`}
+                                >
+                                  20% Ahorro
+                                </button>
+                                <button
+                                  onClick={() => toggleTransactionExcluded(t.id)}
+                                  className="px-2 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-500 hover:bg-red-100 hover:text-red-600 transition-all"
+                                  title="Excluir del presupuesto"
+                                >
+                                  ✕
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       ))

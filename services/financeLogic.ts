@@ -12,6 +12,8 @@ export const calculateFinancialHealth = (transactions: Transaction[], monthlyInc
   transactions.forEach(t => {
     // Skip uncategorized transactions
     if (!t.category) return;
+    // Skip excluded transactions (not counted in budget)
+    if (t.isExcluded) return;
     // We only consider the current month's impact or installment value
     const value = t.isInstallment ? (t.installmentValue || 0) : t.amount;
     totals[t.category] += value;

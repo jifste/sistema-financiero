@@ -15,6 +15,7 @@ export interface Transaction {
   subCategory: string;
   isInstallment: boolean;
   isIncome?: boolean;  // true = abono (income), false = cargo (expense)
+  isExcluded?: boolean;  // true = excluded from budget calculations
   installmentCurrent?: number;
   installmentTotal?: number;
   installmentValue?: number;
