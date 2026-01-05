@@ -58,10 +58,13 @@ import {
   Bell,
   Settings,
   AlertTriangle,
-  Trash2
+  Trash2,
+  User,
+  Shield
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 import { Link } from 'react-router-dom';
+import { MyDataPage } from './src/components/MyDataPage';
 
 import { MOCK_TRANSACTIONS } from './constants';
 import { CategoryType, Transaction } from './types';
@@ -93,7 +96,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 const INCOME = 6137000;
 
-type TabType = 'resumen' | 'movimientos' | 'cuentas' | 'presupuesto' | 'creditos' | 'calendario' | 'proyectos' | 'historial' | 'ahorro' | 'proyeccion' | 'sugerencias';
+type TabType = 'resumen' | 'movimientos' | 'cuentas' | 'presupuesto' | 'creditos' | 'calendario' | 'proyectos' | 'historial' | 'ahorro' | 'proyeccion' | 'sugerencias' | 'mis_datos';
 
 // Expense categories for transaction classification
 const EXPENSE_CATEGORIES = [
@@ -1824,9 +1827,10 @@ const App: React.FC = () => {
             <span className="font-bold text-xl tracking-tight text-slate-800">FinanceAI<span className="text-indigo-600">Pro</span></span>
           </div>
 
-          <nav className="space-y-2 flex-grow">
+          <nav className="space-y-2 flex-grow overflow-y-auto pr-2 custom-scrollbar">
             {[
               { icon: LayoutDashboard, label: 'Resumen', tab: 'resumen' as TabType },
+              { icon: User, label: 'Mis Datos', tab: 'mis_datos' as TabType },
               { icon: Tag, label: 'Movimientos', tab: 'movimientos' as TabType },
               { icon: CreditCard, label: 'Presupuesto', tab: 'cuentas' as TabType },
               { icon: PieChartIcon, label: 'Análisis', tab: 'presupuesto' as TabType },
@@ -1978,6 +1982,24 @@ const App: React.FC = () => {
           )}
 
           {/* Tab Content */}
+          {activeTab === 'mis_datos' && (
+            <MyDataPage
+              userData={{
+                transactions, creditOperations, manualSubscriptions, calendarTasks,
+                savingsProjects, savingsProjection, importedFiles, userName,
+                profile: (transactions as any).profile // Temporary casting if needed, logic handles it
+              }}
+              setUserData={(newUserData) => {
+                if (typeof newUserData === 'function') return;
+                // If userName changed, update local state
+                if (newUserData.userName !== userName) setUserName(newUserData.userName);
+                // Full reload/sync might be needed for profile deeper updates if we don't lift state fully, 
+                // but MyDataPage handles its own saving to Supabase.
+              }}
+              userId={user?.id}
+            />
+          )}
+
           {!isLoadingData && activeTab === 'resumen' && transactions.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100">
               <div className="p-6 bg-indigo-50 rounded-full mb-6">

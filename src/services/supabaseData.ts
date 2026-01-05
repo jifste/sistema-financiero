@@ -55,6 +55,16 @@ export interface ImportedFile {
   transactionIds: string[];
 }
 
+export interface UserProfile {
+  rut: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  address: string;
+  profession: string;
+  birthDate: string;
+}
+
 export interface UserData {
   transactions: Transaction[];
   creditOperations: CreditOperation[];
@@ -64,6 +74,7 @@ export interface UserData {
   savingsProjection: SavingsProjectionEntry[];
   importedFiles: ImportedFile[];
   userName: string;
+  profile?: UserProfile;
 }
 
 const DEFAULT_USER_DATA: UserData = {
@@ -147,9 +158,9 @@ export async function saveUserData(userId: string, userData: UserData): Promise<
  */
 export async function migrateFromLocalStorage(userId: string): Promise<UserData | null> {
   const localData = loadFromLocalStorage(userId);
-  
+
   // Check if local data has any content
-  const hasLocalData = 
+  const hasLocalData =
     localData.transactions.length > 0 ||
     localData.creditOperations.length > 0 ||
     localData.manualSubscriptions.length > 0 ||
