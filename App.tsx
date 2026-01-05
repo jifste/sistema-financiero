@@ -3740,8 +3740,7 @@ const App: React.FC = () => {
                 };
               });
 
-              // Add current month (calculated in real-time) if not already saved
-              const currentMonthSaved = savingsProjection.some(p => p.monthKey === currentMonthKey);
+              // Add current month (calculated in real-time) - always use real-time for current month
               const currentMonthData = {
                 month: `${monthNames[now.getMonth()]} ${now.getFullYear().toString().slice(-2)}`,
                 monthKey: currentMonthKey,
@@ -3749,7 +3748,9 @@ const App: React.FC = () => {
                 positivo: totalAhorroGlobal >= 0
               };
 
-              const combined = currentMonthSaved ? savedMonths : [...savedMonths, currentMonthData];
+              // Filter out current month from saved if exists, and add real-time current month
+              const historicalMonths = savedMonths.filter(m => m.monthKey !== currentMonthKey);
+              const combined = [...historicalMonths, currentMonthData];
 
               // Sort by monthKey and return last 6 months
               return combined
