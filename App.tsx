@@ -53,7 +53,8 @@ import {
   Cloud,
   CloudOff,
   RefreshCw,
-  Loader2
+  Loader2,
+  MessageSquare
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
 
@@ -85,7 +86,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 const INCOME = 6137000;
 
-type TabType = 'resumen' | 'movimientos' | 'cuentas' | 'presupuesto' | 'creditos' | 'calendario' | 'proyectos' | 'historial' | 'ahorro' | 'proyeccion';
+type TabType = 'resumen' | 'movimientos' | 'cuentas' | 'presupuesto' | 'creditos' | 'calendario' | 'proyectos' | 'historial' | 'ahorro' | 'proyeccion' | 'sugerencias';
 
 // Expense categories for transaction classification
 const EXPENSE_CATEGORIES = [
@@ -244,7 +245,9 @@ const App: React.FC = () => {
   const [userName, setUserName] = useState<string>('');
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showEditName, setShowEditName] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [tempName, setTempName] = useState('');
+
 
   // Cloud sync state
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
@@ -1593,6 +1596,60 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Update/Changelog Modal */}
+      {showUpdateModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full mx-4 shadow-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
+                  <Sparkles size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Novedades v2.1.0</h3>
+                  <p className="text-xs text-slate-500">Enero 2026</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowUpdateModal(false)}
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-green-50 rounded-xl">
+                <h4 className="font-semibold text-green-800 mb-2">✨ Persistencia de Transacciones</h4>
+                <p className="text-sm text-green-700">Tus categorizaciones se guardan al reimportar cartolas. No más trabajo perdido.</p>
+              </div>
+
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <h4 className="font-semibold text-blue-800 mb-2">🚫 Excluir Transacciones</h4>
+                <p className="text-sm text-blue-700">Excluye ingresos o gastos del presupuesto (préstamos, traspasos APV, etc.)</p>
+              </div>
+
+              <div className="p-4 bg-purple-50 rounded-xl">
+                <h4 className="font-semibold text-purple-800 mb-2">📊 Ahorro Total Mejorado</h4>
+                <p className="text-sm text-purple-700">El gráfico ahora muestra el total disponible para ahorrar (necesidades + deseos + 20%).</p>
+              </div>
+
+              <div className="p-4 bg-orange-50 rounded-xl">
+                <h4 className="font-semibold text-orange-800 mb-2">🗑️ Borrado Inteligente</h4>
+                <p className="text-sm text-orange-700">Eliminar cartolas ya no borra las transacciones categorizadas.</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowUpdateModal(false)}
+              className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all"
+            >
+              ¡Entendido!
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="min-h-screen bg-[#F8FAFC] flex">
         {/* Mobile sidebar overlay */}
         {isMobileSidebarOpen && (
@@ -1623,6 +1680,7 @@ const App: React.FC = () => {
               { icon: Clock, label: 'Historial', tab: 'historial' as TabType },
               { icon: PiggyBank, label: 'Ahorro', tab: 'ahorro' as TabType },
               { icon: TrendingUp, label: 'Proyección', tab: 'proyeccion' as TabType },
+              { icon: MessageSquare, label: 'Sugerencias', tab: 'sugerencias' as TabType },
             ].map((item) => (
               <button
                 key={item.label}
@@ -1644,12 +1702,14 @@ const App: React.FC = () => {
           </nav>
 
           <div className="mt-auto">
-            <div className="p-4 bg-slate-900 rounded-2xl text-white">
-              <p className="text-xs opacity-60 mb-1">Plan Pro</p>
-              <p className="text-sm font-semibold mb-3">Tu salud financiera está al 84%</p>
-              <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                <div className="bg-indigo-500 h-full w-[84%]"></div>
-              </div>
+            <div className="p-3 bg-slate-100 rounded-2xl text-slate-600 text-center">
+              <p className="text-xs font-medium">FinanceAI Pro v2.1.0</p>
+              <button
+                onClick={() => setShowUpdateModal(true)}
+                className="text-xs text-indigo-600 hover:text-indigo-800 underline mt-1"
+              >
+                Ver novedades
+              </button>
             </div>
           </div>
         </aside>
@@ -4216,7 +4276,117 @@ const App: React.FC = () => {
               </div>
             </div>
           )}
+
+          {activeTab === 'sugerencias' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-slate-900">Sugerencias y Feedback</h2>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Panel de sugerencias */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-100">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                      <MessageSquare size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">Tu opinión importa</h3>
+                      <p className="text-sm text-slate-500">¿Tienes una idea para mejorar la app?</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de sugerencia</label>
+                      <select className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option>Nueva Funcionalidad</option>
+                        <option>Mejora de Interfaz</option>
+                        <option>Reportar un Error</option>
+                        <option>Otro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Descripción</label>
+                      <textarea
+                        rows={5}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Cuéntanos tu idea en detalle..."
+                      ></textarea>
+                    </div>
+                    <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all">
+                      Enviar Sugerencia
+                    </button>
+                  </div>
+                </div>
+
+                {/* Hoja de ruta (Roadmap) */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-100">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl">
+                      <Sparkles size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">Próximas Mejoras</h3>
+                      <p className="text-sm text-slate-500">En qué estamos trabajando</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex gap-4 p-3 bg-green-50 rounded-xl border border-green-100">
+                      <div className="mt-1">
+                        <div className="w-5 h-5 rounded-full bg-green-200 flex items-center justify-center">
+                          <Check size={12} className="text-green-700" />
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-green-800 text-sm">Persistencia de Datos</h4>
+                        <p className="text-xs text-green-700 mt-1">Implementado: Las categorizaciones ahora se guardan aunque borres/reimportes cartolas.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 p-3 bg-green-50 rounded-xl border border-green-100">
+                      <div className="mt-1">
+                        <div className="w-5 h-5 rounded-full bg-green-200 flex items-center justify-center">
+                          <Check size={12} className="text-green-700" />
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-green-800 text-sm">Control de Presupuesto</h4>
+                        <p className="text-xs text-green-700 mt-1">Implementado: Capacidad de excluir ingresos y gastos del cálculo 50/30/20.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100 opacity-60">
+                      <div className="mt-1">
+                        <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center">
+                          <span className="text-[10px] font-bold text-slate-600">3</span>
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-slate-700 text-sm">Próximo: Exportación PDF</h4>
+                        <p className="text-xs text-slate-500 mt-1">Generar reportes mensuales en PDF para imprimir o archivar.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100 opacity-60">
+                      <div className="mt-1">
+                        <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center">
+                          <span className="text-[10px] font-bold text-slate-600">4</span>
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-slate-700 text-sm">Próximo: Metas de Ahorro</h4>
+                        <p className="text-xs text-slate-500 mt-1">Establecer objetivos específicos (ej: vacaciones, auto) y seguir el progreso.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
+
       </div>
 
       {/* AI Chat Assistant */}
