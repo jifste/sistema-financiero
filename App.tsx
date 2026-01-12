@@ -57,7 +57,6 @@ import {
   MessageSquare,
   Bell,
   AlertTriangle,
-  Trash2,
   User,
   Shield
 } from 'lucide-react';
@@ -200,6 +199,8 @@ const App: React.FC = () => {
 
   // State declarations - will be reloaded when user changes
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Ref to keep synchronous access to transactions for deduplication in imports
+  const transactionsRef = useRef<Transaction[]>([]);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'todos' | 'ingresos' | 'gastos'>('todos');
   const [searchTerm, setSearchTerm] = useState('');
@@ -415,30 +416,25 @@ const App: React.FC = () => {
   }, [transactions, creditOperations, manualSubscriptions, calendarTasks, savingsProjects, savingsProjection, importedFiles, userName, userProfile, user?.id, isLoadingData, saveToCloud]);
 
   // Migrate transaction hashes for deduplication (run once after data loads)
+  // ALWAYS regenerate hashes to ensure new collision-resistant algorithm is used
   useEffect(() => {
     if (!isLoadingData && transactions.length > 0) {
-      // Check if any transactions are missing hashes
-      const needsHashMigration = transactions.some(t => !t.hash);
-
-      if (needsHashMigration) {
-        console.log('📝 Migrating transaction hashes for deduplication...');
-        setTransactions(prev => prev.map(t => {
-          if (!t.hash) {
-            const normalizedDate = (t.date || '').split('T')[0];
-            const normalizedDesc = (t.description || '').toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 50);
-            const normalizedAmount = Math.abs(t.amount).toFixed(0);
-            const combined = `${normalizedDate}|${normalizedDesc}|${normalizedAmount}`;
-            let hash: string;
-            try {
-              hash = btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
-            } catch {
-              hash = combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
-            }
-            return { ...t, hash };
-          }
-          return t;
-        }));
-      }
+      // Always regenerate ALL hashes with new algorithm to fix collision bug
+      console.log('📝 Regenerating transaction hashes with new algorithm...');
+      setTransactions(prev => prev.map(t => {
+        const normalizedDate = (t.date || '').split('T')[0];
+        const normalizedDesc = (t.description || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const descSuffix = normalizedDesc.slice(-20);
+        const normalizedAmount = Math.abs(t.amount).toFixed(0);
+        const combined = `${normalizedAmount}|${descSuffix}|${normalizedDate}`;
+        let hash: string;
+        try {
+          hash = btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
+        } catch {
+          hash = combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
+        }
+        return { ...t, hash };
+      }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingData]); // Only run when loading state changes
@@ -479,6 +475,11 @@ const App: React.FC = () => {
       localStorage.setItem(getStorageKey('savings_projection'), JSON.stringify(savingsProjection));
     }
   }, [savingsProjection, user?.id, getStorageKey]);
+
+  // Keep transactionsRef in sync with transactions state
+  useEffect(() => {
+    transactionsRef.current = transactions;
+  }, [transactions]);
 
   // Save imported files to localStorage
   useEffect(() => {
@@ -768,27 +769,29 @@ const App: React.FC = () => {
   // Migrate existing transactions to add hashes (for deduplication)
   // This ensures old transactions without hashes get them for future imports
   const migrateTransactionHashes = useCallback((txs: Transaction[]): Transaction[] => {
+    // FORCE regenerate ALL hashes to fix collision bug (hash algorithm changed)
+    // New algorithm: amount|last20CharsDesc|date with 32 char hash
     let needsMigration = false;
     const migrated = txs.map(t => {
-      if (!t.hash) {
-        needsMigration = true;
-        const normalizedDate = (t.date || '').split('T')[0];
-        const normalizedDesc = (t.description || '').toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 50);
-        const normalizedAmount = Math.abs(t.amount).toFixed(0);
-        const combined = `${normalizedDate}|${normalizedDesc}|${normalizedAmount}`;
-        let hash: string;
-        try {
-          hash = btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
-        } catch {
-          hash = combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
-        }
-        return { ...t, hash };
+      // Always regenerate hash to ensure consistency with new algorithm
+      needsMigration = true;
+      const normalizedDate = (t.date || '').split('T')[0];
+      const normalizedDesc = (t.description || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const descSuffix = normalizedDesc.slice(-20);
+      const normalizedAmount = Math.abs(t.amount).toFixed(0);
+      // Put amount FIRST to differentiate transactions early in the hash
+      const combined = `${normalizedAmount}|${descSuffix}|${normalizedDate}`;
+      let hash: string;
+      try {
+        hash = btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
+      } catch {
+        hash = combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
       }
-      return t;
+      return { ...t, hash };
     });
 
-    if (needsMigration) {
-      console.log('📝 Migrated transaction hashes for deduplication');
+    if (needsMigration && txs.length > 0) {
+      console.log('📝 Regenerated transaction hashes with new algorithm');
     }
     return migrated;
   }, []);
@@ -813,17 +816,21 @@ const App: React.FC = () => {
 
   // Generate unique hash for transaction deduplication
   // This allows identifying the same transaction across imports
+  // IMPORTANT: Put amount FIRST to avoid hash collisions for same-day transactions
   const generateTransactionHash = (date: string, description: string, amount: number): string => {
     const normalizedDate = (date || '').split('T')[0]; // Solo fecha, sin hora
-    const normalizedDesc = (description || '').toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 50);
+    const normalizedDesc = (description || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    // Take last 20 chars of description (more unique than first chars like "transferencia")
+    const descSuffix = normalizedDesc.slice(-20);
     const normalizedAmount = Math.abs(amount).toFixed(0);
-    const combined = `${normalizedDate}|${normalizedDesc}|${normalizedAmount}`;
-    // Create a simple hash using btoa and clean it
+    // Put amount FIRST to differentiate transactions early in the hash
+    const combined = `${normalizedAmount}|${descSuffix}|${normalizedDate}`;
+    // Create a simple hash using btoa and clean it - use 32 chars for better uniqueness
     try {
-      return btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
+      return btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
     } catch {
       // Fallback for non-ASCII characters
-      return combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 24);
+      return combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
     }
   };
 
@@ -865,6 +872,26 @@ const App: React.FC = () => {
     const descCol = findCol(['movimiento', 'descripcion', 'concepto', 'detalle']);
     const cargoCol = findCol(['cargo', 'debito', 'egreso', 'gasto']);
     const abonoCol = findCol(['abono', 'credito', 'ingreso', 'deposito']);
+
+    // DEBUG LOGGING
+    console.log('📁 Excel Import Debug:');
+    console.log('  Headers found:', headers);
+    console.log('  Header row index:', headerRowIndex);
+    console.log('  Column mapping:', { fechaCol, descCol, cargoCol, abonoCol });
+    console.log('  Total data rows:', rawData.length - headerRowIndex - 1);
+
+    // Log first 3 data rows for debugging
+    for (let debug = headerRowIndex + 1; debug < Math.min(headerRowIndex + 4, rawData.length); debug++) {
+      const debugRow = rawData[debug];
+      if (debugRow) {
+        console.log(`  Row ${debug}:`, {
+          fecha: debugRow[fechaCol],
+          desc: debugRow[descCol],
+          cargo: debugRow[cargoCol],
+          abono: debugRow[abonoCol]
+        });
+      }
+    }
 
     const importedTransactions: Transaction[] = [];
 
@@ -955,29 +982,29 @@ const App: React.FC = () => {
     // DEDUPLICATION: Only add transactions that don't already exist
     // This preserves categorizations on existing transactions
 
-    // FIX: Calculate existing hashes BEFORE setTransactions to avoid race condition
-    // We need to capture current state synchronously before the async update
-    let newTransactionsAdded: Transaction[] = [];
+    // Use transactionsRef for synchronous access to current transactions
+    // This avoids the race condition where setTransactions callback executes after return
+    console.log(`🔍 transactionsRef.current length: ${transactionsRef.current.length}`);
+    console.log(`🔍 importedTransactions count: ${importedTransactions.length}`);
 
-    setTransactions(prev => {
-      // Build set of existing hashes (for transactions that have hash)
-      const existingHashes = new Set(
-        prev.filter(t => t.hash).map(t => t.hash)
-      );
+    const existingHashes = new Set(
+      transactionsRef.current.filter(t => t.hash).map(t => t.hash)
+    );
+    console.log(`🔍 existingHashes count: ${existingHashes.size}`);
 
-      // Filter out transactions that already exist
-      newTransactionsAdded = importedTransactions.filter(t => !existingHashes.has(t.hash));
+    // Calculate new transactions BEFORE calling setTransactions
+    const newTransactions = importedTransactions.filter(t => !existingHashes.has(t.hash));
 
-      console.log(`📊 Deduplicación: ${importedTransactions.length} en archivo, ${newTransactionsAdded.length} nuevas`);
+    console.log(`📊 Deduplicación: ${importedTransactions.length} en archivo, ${newTransactions.length} nuevas`);
 
-      // Return: new transactions first, then existing (preserves order)
-      return [...newTransactionsAdded, ...prev];
-    });
+    // Only update state if there are new transactions
+    if (newTransactions.length > 0) {
+      setTransactions(prev => [...newTransactions, ...prev]);
+    }
 
-    // Use the transactions that were actually added (calculated inside setTransactions)
     return {
-      count: newTransactionsAdded.length,
-      ids: newTransactionsAdded.map(t => t.id)
+      count: newTransactions.length,
+      ids: newTransactions.map(t => t.id)
     };
   };
 
@@ -1028,24 +1055,23 @@ const App: React.FC = () => {
     });
 
     // DEDUPLICATION: Only add transactions that don't already exist
-    // FIX: Calculate new transactions inside setTransactions to avoid race condition
-    let newTransactionsAdded: Transaction[] = [];
+    // Use transactionsRef for synchronous access to current transactions
+    const existingHashes = new Set(
+      transactionsRef.current.filter(t => t.hash).map(t => t.hash)
+    );
 
-    setTransactions(prev => {
-      const existingHashes = new Set(
-        prev.filter(t => t.hash).map(t => t.hash)
-      );
-      newTransactionsAdded = importedTransactions.filter(t => !existingHashes.has(t.hash));
+    const newTransactions = importedTransactions.filter(t => !existingHashes.has(t.hash));
 
-      console.log(`📊 PDF Deduplicación: ${importedTransactions.length} detectadas, ${newTransactionsAdded.length} nuevas`);
+    console.log(`📊 PDF Deduplicación: ${importedTransactions.length} detectadas, ${newTransactions.length} nuevas`);
 
-      return [...newTransactionsAdded, ...prev];
-    });
+    // Only update state if there are new transactions
+    if (newTransactions.length > 0) {
+      setTransactions(prev => [...newTransactions, ...prev]);
+    }
 
-    // Use the transactions that were actually added
     return {
-      count: newTransactionsAdded.length,
-      ids: newTransactionsAdded.map(t => t.id)
+      count: newTransactions.length,
+      ids: newTransactions.map(t => t.id)
     };
   };
 
