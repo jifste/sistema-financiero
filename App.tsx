@@ -930,6 +930,11 @@ const App: React.FC = () => {
 
     // DEDUPLICATION: Only add transactions that don't already exist
     // This preserves categorizations on existing transactions
+
+    // FIX: Calculate existing hashes BEFORE setTransactions to avoid race condition
+    // We need to capture current state synchronously before the async update
+    let newTransactionsAdded: Transaction[] = [];
+
     setTransactions(prev => {
       // Build set of existing hashes (for transactions that have hash)
       const existingHashes = new Set(
@@ -937,21 +942,18 @@ const App: React.FC = () => {
       );
 
       // Filter out transactions that already exist
-      const newTransactions = importedTransactions.filter(t => !existingHashes.has(t.hash));
+      newTransactionsAdded = importedTransactions.filter(t => !existingHashes.has(t.hash));
+
+      console.log(`📊 Deduplicación: ${importedTransactions.length} en archivo, ${newTransactionsAdded.length} nuevas`);
 
       // Return: new transactions first, then existing (preserves order)
-      return [...newTransactions, ...prev];
+      return [...newTransactionsAdded, ...prev];
     });
 
-    // Count only the NEW transactions that were actually added
-    const existingHashSet = new Set(transactions.filter(t => t.hash).map(t => t.hash));
-    const actuallyNewIds = importedTransactions
-      .filter(t => !existingHashSet.has(t.hash))
-      .map(t => t.id);
-
+    // Use the transactions that were actually added (calculated inside setTransactions)
     return {
-      count: actuallyNewIds.length,
-      ids: actuallyNewIds
+      count: newTransactionsAdded.length,
+      ids: newTransactionsAdded.map(t => t.id)
     };
   };
 
@@ -1002,23 +1004,24 @@ const App: React.FC = () => {
     });
 
     // DEDUPLICATION: Only add transactions that don't already exist
+    // FIX: Calculate new transactions inside setTransactions to avoid race condition
+    let newTransactionsAdded: Transaction[] = [];
+
     setTransactions(prev => {
       const existingHashes = new Set(
         prev.filter(t => t.hash).map(t => t.hash)
       );
-      const newTransactions = importedTransactions.filter(t => !existingHashes.has(t.hash));
-      return [...newTransactions, ...prev];
+      newTransactionsAdded = importedTransactions.filter(t => !existingHashes.has(t.hash));
+
+      console.log(`📊 PDF Deduplicación: ${importedTransactions.length} detectadas, ${newTransactionsAdded.length} nuevas`);
+
+      return [...newTransactionsAdded, ...prev];
     });
 
-    // Count only NEW transactions
-    const existingHashSet = new Set(transactions.filter(t => t.hash).map(t => t.hash));
-    const actuallyNewIds = importedTransactions
-      .filter(t => !existingHashSet.has(t.hash))
-      .map(t => t.id);
-
+    // Use the transactions that were actually added
     return {
-      count: actuallyNewIds.length,
-      ids: actuallyNewIds
+      count: newTransactionsAdded.length,
+      ids: newTransactionsAdded.map(t => t.id)
     };
   };
 
@@ -1046,35 +1049,43 @@ const App: React.FC = () => {
 
       if (extension === 'xlsx' || extension === 'xls') {
         result = await handleExcelImport(file);
-        setImportStatus(`✅ ${result.count} transacciones importadas desde Excel`);
 
-        // Register imported file
+        // Always register imported file (even if no new transactions due to deduplication)
+        const importedFile: ImportedFile = {
+          id: `file-${Date.now()}`,
+          name: file.name,
+          type: 'excel',
+          importDate: new Date().toISOString(),
+          transactionCount: result.count,
+          transactionIds: result.ids
+        };
+        setImportedFiles(prev => [...prev, importedFile]);
+
+        // Set appropriate status message
         if (result.count > 0) {
-          const importedFile: ImportedFile = {
-            id: `file-${Date.now()}`,
-            name: file.name,
-            type: 'excel',
-            importDate: new Date().toISOString(),
-            transactionCount: result.count,
-            transactionIds: result.ids
-          };
-          setImportedFiles(prev => [...prev, importedFile]);
+          setImportStatus(`✅ ${result.count} transacciones nuevas importadas desde Excel`);
+        } else {
+          setImportStatus(`ℹ️ Archivo procesado, 0 transacciones nuevas (posible duplicado)`);
         }
       } else if (extension === 'pdf') {
         result = await handlePDFImport(file);
-        setImportStatus(`✅ ${result.count} transacciones extraídas del PDF`);
 
-        // Register imported file
+        // Always register imported file
+        const importedFile: ImportedFile = {
+          id: `file-${Date.now()}`,
+          name: file.name,
+          type: 'pdf',
+          importDate: new Date().toISOString(),
+          transactionCount: result.count,
+          transactionIds: result.ids
+        };
+        setImportedFiles(prev => [...prev, importedFile]);
+
+        // Set appropriate status message
         if (result.count > 0) {
-          const importedFile: ImportedFile = {
-            id: `file-${Date.now()}`,
-            name: file.name,
-            type: 'pdf',
-            importDate: new Date().toISOString(),
-            transactionCount: result.count,
-            transactionIds: result.ids
-          };
-          setImportedFiles(prev => [...prev, importedFile]);
+          setImportStatus(`✅ ${result.count} transacciones nuevas extraídas del PDF`);
+        } else {
+          setImportStatus(`ℹ️ PDF procesado, 0 transacciones nuevas (posible duplicado)`);
         }
       } else {
         setImportStatus('❌ Formato no soportado. Use Excel (.xlsx) o PDF');
