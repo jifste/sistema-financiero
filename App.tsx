@@ -892,20 +892,44 @@ const App: React.FC = () => {
       let amount = 0;
       let isIncome = false;
 
+      // Helper function to parse Chilean currency format
+      // Chilean format uses dots as thousand separators: $20.000 = 20000
+      const parseChileanAmount = (value: any): number => {
+        if (value === null || value === undefined || value === '') return 0;
+        const strVal = String(value);
+        // Remove currency symbols, spaces, and handle Chilean format
+        // 1. Remove $ and spaces
+        // 2. If there's a comma, it's the decimal separator (e.g., "1.234,56")
+        // 3. Remove dots (thousand separators in Chilean format)
+        let cleaned = strVal.replace(/[$\s]/g, '');
+
+        // Check if it uses comma as decimal separator (European/Chilean format: 1.234,56)
+        if (cleaned.includes(',')) {
+          // Replace dots (thousands) with nothing, then comma (decimal) with dot
+          cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+        } else {
+          // No comma means dots are thousand separators (Chilean: 20.000 = 20000)
+          cleaned = cleaned.replace(/\./g, '');
+        }
+
+        const parsed = parseFloat(cleaned);
+        return isNaN(parsed) ? 0 : Math.abs(parsed);
+      };
+
       // Check cargo first (expense)
       if (cargoCol >= 0 && row[cargoCol] && row[cargoCol] !== '') {
-        const cargoVal = parseFloat(String(row[cargoCol]).replace(/[^0-9.-]/g, ''));
-        if (!isNaN(cargoVal) && cargoVal > 0) {
-          amount = Math.abs(cargoVal);
+        const cargoVal = parseChileanAmount(row[cargoCol]);
+        if (cargoVal > 0) {
+          amount = cargoVal;
           isIncome = false;
         }
       }
 
       // Check abono (income)
       if (amount === 0 && abonoCol >= 0 && row[abonoCol] && row[abonoCol] !== '') {
-        const abonoVal = parseFloat(String(row[abonoCol]).replace(/[^0-9.-]/g, ''));
-        if (!isNaN(abonoVal) && abonoVal > 0) {
-          amount = Math.abs(abonoVal);
+        const abonoVal = parseChileanAmount(row[abonoCol]);
+        if (abonoVal > 0) {
+          amount = abonoVal;
           isIncome = true;
         }
       }
