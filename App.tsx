@@ -439,6 +439,41 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingData]); // Only run when loading state changes
 
+  // Auto-create a virtual file to group orphaned transactions
+  // This fixes the issue where transactions exist but have no associated cartola
+  useEffect(() => {
+    if (!isLoadingData && transactions.length > 0 && importedFiles.length === 0) {
+      console.log('📁 Creating virtual file for orphaned transactions...');
+
+      // Find the date range of existing transactions
+      const dates = transactions.map(t => t.date).filter(d => d).sort();
+      const firstDate = dates[0] || new Date().toISOString();
+      const lastDate = dates[dates.length - 1] || new Date().toISOString();
+
+      // Format dates for display
+      const formatDate = (dateStr: string) => {
+        try {
+          const d = new Date(dateStr);
+          return d.toLocaleDateString('es-CL', { month: 'short', year: 'numeric' });
+        } catch {
+          return 'fecha desconocida';
+        }
+      };
+
+      const virtualFile: ImportedFile = {
+        id: `virtual-${Date.now()}`,
+        name: `Transacciones (${formatDate(firstDate)} - ${formatDate(lastDate)})`,
+        type: 'excel',
+        importDate: new Date().toISOString(),
+        transactionCount: transactions.length,
+        transactionIds: transactions.map(t => t.id)
+      };
+
+      setImportedFiles([virtualFile]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoadingData, transactions.length, importedFiles.length]);
+
   // Save to localStorage when data changes (only if user is logged in)
   useEffect(() => {
     if (user?.id) {
