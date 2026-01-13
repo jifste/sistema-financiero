@@ -74,6 +74,14 @@ import {
   getCashFlowProjection
 } from './services/financeLogic';
 
+import {
+  generateTransactionHashSync,
+  parseChileanDate,
+  sortTransactionsChronologically,
+  getLatestTransactionDate,
+  filterNewTransactions
+} from './services/transactionService';
+
 import { BentoCard } from './components/BentoCard';
 import { FinancialHealthGauge } from './components/FinancialHealthGauge';
 import { SnowballSimulator } from './components/SnowballSimulator';
@@ -419,22 +427,16 @@ const App: React.FC = () => {
   // ALWAYS regenerate hashes to ensure new collision-resistant algorithm is used
   useEffect(() => {
     if (!isLoadingData && transactions.length > 0) {
-      // Always regenerate ALL hashes with new algorithm to fix collision bug
+      // Always regenerate ALL hashes with new algorithm (includes balance)
       console.log('📝 Regenerating transaction hashes with new algorithm...');
-      setTransactions(prev => prev.map(t => {
-        const normalizedDate = (t.date || '').split('T')[0];
-        const normalizedDesc = (t.description || '').toLowerCase().replace(/\s+/g, ' ').trim();
-        const descSuffix = normalizedDesc.slice(-20);
-        const normalizedAmount = Math.abs(t.amount).toFixed(0);
-        const combined = `${normalizedAmount}|${descSuffix}|${normalizedDate}`;
-        let hash: string;
-        try {
-          hash = btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
-        } catch {
-          hash = combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
-        }
-        return { ...t, hash };
-      }));
+      setTransactions(prev => {
+        const updated = prev.map(t => ({
+          ...t,
+          hash: generateTransactionHashSync(t.date, t.description, t.amount, t.balance)
+        }));
+        // Also ensure chronological order is maintained
+        return sortTransactionsChronologically(updated, 'desc');
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingData]); // Only run when loading state changes
@@ -849,24 +851,10 @@ const App: React.FC = () => {
     return date.toISOString().split('T')[0];
   };
 
-  // Generate unique hash for transaction deduplication
-  // This allows identifying the same transaction across imports
-  // IMPORTANT: Put amount FIRST to avoid hash collisions for same-day transactions
-  const generateTransactionHash = (date: string, description: string, amount: number): string => {
-    const normalizedDate = (date || '').split('T')[0]; // Solo fecha, sin hora
-    const normalizedDesc = (description || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    // Take last 20 chars of description (more unique than first chars like "transferencia")
-    const descSuffix = normalizedDesc.slice(-20);
-    const normalizedAmount = Math.abs(amount).toFixed(0);
-    // Put amount FIRST to differentiate transactions early in the hash
-    const combined = `${normalizedAmount}|${descSuffix}|${normalizedDate}`;
-    // Create a simple hash using btoa and clean it - use 32 chars for better uniqueness
-    try {
-      return btoa(combined).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
-    } catch {
-      // Fallback for non-ASCII characters
-      return combined.replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
-    }
+  // Generate unique hash for transaction deduplication (wrapper for PDF import)
+  // Uses the centralized hash function from transactionService
+  const generateTransactionHash = (date: string, description: string, amount: number, balance?: number): string => {
+    return generateTransactionHashSync(date, description, amount, balance);
   };
 
   // Excel Import Handler - supports Chilean bank statements
@@ -907,12 +895,13 @@ const App: React.FC = () => {
     const descCol = findCol(['movimiento', 'descripcion', 'concepto', 'detalle']);
     const cargoCol = findCol(['cargo', 'debito', 'egreso', 'gasto']);
     const abonoCol = findCol(['abono', 'credito', 'ingreso', 'deposito']);
+    const saldoCol = findCol(['saldo', 'balance', 'disponible']);  // NEW: parse balance column
 
     // DEBUG LOGGING
     console.log('📁 Excel Import Debug:');
     console.log('  Headers found:', headers);
     console.log('  Header row index:', headerRowIndex);
-    console.log('  Column mapping:', { fechaCol, descCol, cargoCol, abonoCol });
+    console.log('  Column mapping:', { fechaCol, descCol, cargoCol, abonoCol, saldoCol });
     console.log('  Total data rows:', rawData.length - headerRowIndex - 1);
 
     // Log first 3 data rows for debugging
@@ -923,27 +912,38 @@ const App: React.FC = () => {
           fecha: debugRow[fechaCol],
           desc: debugRow[descCol],
           cargo: debugRow[cargoCol],
-          abono: debugRow[abonoCol]
+          abono: debugRow[abonoCol],
+          saldo: debugRow[saldoCol]
         });
       }
     }
 
     const importedTransactions: Transaction[] = [];
 
+    // Helper function to parse Chilean currency format
+    // Chilean format uses dots as thousand separators: $20.000 = 20000
+    const parseChileanAmount = (value: any): number => {
+      if (value === null || value === undefined || value === '') return 0;
+      const strVal = String(value);
+      let cleaned = strVal.replace(/[$\s]/g, '');
+      if (cleaned.includes(',')) {
+        cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+      } else {
+        cleaned = cleaned.replace(/\./g, '');
+      }
+      const parsed = parseFloat(cleaned);
+      return isNaN(parsed) ? 0 : Math.abs(parsed);
+    };
+
     // Parse data rows (skip header)
     for (let i = headerRowIndex + 1; i < rawData.length; i++) {
       const row = rawData[i];
       if (!row || !Array.isArray(row) || row.length < 3) continue;
 
-      // Get date
+      // Get date - use parseChileanDate from service
       let dateStr = '';
       if (fechaCol >= 0 && row[fechaCol] !== undefined) {
-        const dateVal = row[fechaCol];
-        if (typeof dateVal === 'number' && dateVal > 40000 && dateVal < 50000) {
-          dateStr = excelDateToJSDate(dateVal);
-        } else {
-          dateStr = String(dateVal);
-        }
+        dateStr = parseChileanDate(String(row[fechaCol]));
       }
 
       // Get description
@@ -953,30 +953,6 @@ const App: React.FC = () => {
       // Get amount and determine if income (abono) or expense (cargo)
       let amount = 0;
       let isIncome = false;
-
-      // Helper function to parse Chilean currency format
-      // Chilean format uses dots as thousand separators: $20.000 = 20000
-      const parseChileanAmount = (value: any): number => {
-        if (value === null || value === undefined || value === '') return 0;
-        const strVal = String(value);
-        // Remove currency symbols, spaces, and handle Chilean format
-        // 1. Remove $ and spaces
-        // 2. If there's a comma, it's the decimal separator (e.g., "1.234,56")
-        // 3. Remove dots (thousand separators in Chilean format)
-        let cleaned = strVal.replace(/[$\s]/g, '');
-
-        // Check if it uses comma as decimal separator (European/Chilean format: 1.234,56)
-        if (cleaned.includes(',')) {
-          // Replace dots (thousands) with nothing, then comma (decimal) with dot
-          cleaned = cleaned.replace(/\./g, '').replace(',', '.');
-        } else {
-          // No comma means dots are thousand separators (Chilean: 20.000 = 20000)
-          cleaned = cleaned.replace(/\./g, '');
-        }
-
-        const parsed = parseFloat(cleaned);
-        return isNaN(parsed) ? 0 : Math.abs(parsed);
-      };
 
       // Check cargo first (expense)
       if (cargoCol >= 0 && row[cargoCol] && row[cargoCol] !== '') {
@@ -996,17 +972,28 @@ const App: React.FC = () => {
         }
       }
 
+      // Get balance (saldo) for more precise hash
+      let balance: number | undefined = undefined;
+      if (saldoCol >= 0 && row[saldoCol] !== undefined && row[saldoCol] !== '') {
+        const saldoVal = parseChileanAmount(row[saldoCol]);
+        if (saldoVal > 0) {
+          balance = saldoVal;
+        }
+      }
+
       if (amount > 0) {
-        const txDate = dateStr || new Date().toISOString();
-        const txHash = generateTransactionHash(txDate, desc, amount);
+        const txDate = dateStr || new Date().toISOString().split('T')[0];
+        // Use generateTransactionHashSync from service (includes balance)
+        const txHash = generateTransactionHashSync(txDate, desc, amount, balance);
         const txId = `excel-${Date.now()}-${i}`;
         importedTransactions.push({
           id: txId,
-          hash: txHash,  // Hash for deduplication
+          hash: txHash,
           description: desc,
           amount: amount,
+          balance: balance,  // Store balance for future reference
           date: txDate,
-          category: undefined,  // Sin categorizar
+          category: undefined,
           subCategory: isIncome ? 'Ingreso' : 'Gasto',
           isInstallment: false,
           isIncome: isIncome
@@ -1014,27 +1001,37 @@ const App: React.FC = () => {
       }
     }
 
-    // DEDUPLICATION: Only add transactions that don't already exist
-    // This preserves categorizations on existing transactions
+    // SORT CHRONOLOGICALLY before deduplication (newest first for UI)
+    const sortedTransactions = sortTransactionsChronologically(importedTransactions, 'desc');
+    console.log(`📅 Transacciones ordenadas cronológicamente: ${sortedTransactions.length}`);
 
-    // Use transactionsRef for synchronous access to current transactions
-    // This avoids the race condition where setTransactions callback executes after return
-    console.log(`🔍 transactionsRef.current length: ${transactionsRef.current.length}`);
-    console.log(`🔍 importedTransactions count: ${importedTransactions.length}`);
-
+    // DELTA LOADING: Get existing data for comparison
     const existingHashes = new Set(
       transactionsRef.current.filter(t => t.hash).map(t => t.hash)
     );
+    const latestDate = getLatestTransactionDate(transactionsRef.current);
+
+    console.log(`🔍 transactionsRef.current length: ${transactionsRef.current.length}`);
+    console.log(`🔍 importedTransactions count: ${sortedTransactions.length}`);
     console.log(`🔍 existingHashes count: ${existingHashes.size}`);
+    console.log(`📅 Última fecha existente: ${latestDate?.toISOString().split('T')[0] || 'ninguna'}`);
 
-    // Calculate new transactions BEFORE calling setTransactions
-    const newTransactions = importedTransactions.filter(t => !existingHashes.has(t.hash));
+    // Filter to only new transactions using delta logic
+    const newTransactions = filterNewTransactions(
+      sortedTransactions,
+      existingHashes as Set<string>,
+      latestDate
+    );
 
-    console.log(`📊 Deduplicación: ${importedTransactions.length} en archivo, ${newTransactions.length} nuevas`);
+    console.log(`📊 Deduplicación Delta: ${sortedTransactions.length} en archivo, ${newTransactions.length} nuevas`);
 
     // Only update state if there are new transactions
     if (newTransactions.length > 0) {
-      setTransactions(prev => [...newTransactions, ...prev]);
+      // Merge new transactions while maintaining chronological order
+      setTransactions(prev => {
+        const merged = [...newTransactions, ...prev];
+        return sortTransactionsChronologically(merged, 'desc');
+      });
     }
 
     return {

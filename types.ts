@@ -7,10 +7,11 @@ export enum CategoryType {
 
 export interface Transaction {
   id: string;
-  hash?: string;  // Unique hash for deduplication (date+description+amount)
+  hash?: string;  // Unique hash for deduplication (date+description+amount+balance)
   date: string;
   description: string;
   amount: number;
+  balance?: number;  // Balance after transaction (for more precise hash)
   category?: CategoryType;  // undefined = sin categorizar
   subCategory: string;
   isInstallment: boolean;
