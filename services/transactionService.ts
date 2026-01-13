@@ -80,9 +80,18 @@ export function parseChileanDate(dateStr: string): string {
     // Handle Excel serial date
     const serial = parseFloat(str);
     if (!isNaN(serial) && serial > 40000 && serial < 60000) {
+        // Excel serial: days since 1900-01-01 (with leap year bug)
+        // 25569 = days from 1900-01-01 to 1970-01-01 (Unix epoch)
+        // Use UTC to avoid timezone offset issues
         const utcDays = Math.floor(serial - 25569);
-        const date = new Date(utcDays * 86400 * 1000);
-        return date.toISOString().split('T')[0];
+        const year = 1970 + Math.floor(utcDays / 365.25);
+        const ms = utcDays * 86400 * 1000;
+        const date = new Date(ms);
+        // Format manually to avoid timezone issues
+        const y = date.getUTCFullYear();
+        const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(date.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
     }
 
     // Handle DD/MM/YYYY or DD-MM-YYYY format

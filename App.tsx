@@ -844,11 +844,15 @@ const App: React.FC = () => {
     isInstallment: false
   });
 
-  // Convert Excel serial date to JS Date
+  // Convert Excel serial date to JS Date (using UTC to avoid timezone issues)
   const excelDateToJSDate = (serial: number): string => {
     const utcDays = Math.floor(serial - 25569);
-    const date = new Date(utcDays * 86400 * 1000);
-    return date.toISOString().split('T')[0];
+    const ms = utcDays * 86400 * 1000;
+    const date = new Date(ms);
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
   // Generate unique hash for transaction deduplication (wrapper for PDF import)
