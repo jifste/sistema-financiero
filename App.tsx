@@ -864,8 +864,8 @@ const App: React.FC = () => {
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
 
-    // Get raw data with headers as first row array
-    const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    // Get data with XLSX date conversion (raw: false makes XLSX format dates as DD/MM/YYYY strings)
+    const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
 
     // Find the header row (look for rows containing "Fecha", "Movimientos", "Cargos", etc)
     let headerRowIndex = -1;
