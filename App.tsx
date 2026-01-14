@@ -1275,14 +1275,27 @@ const App: React.FC = () => {
   };
 
 
-  // Function to delete an imported file entry (preserves transactions!)
-  // Smart delete: removes file from list but keeps transactions with their categorizations
+  // Function to delete an imported file entry AND its transactions
   const deleteImportedFile = (fileId: string) => {
-    // Only remove the file from tracking, transactions are preserved
-    // This allows users to clean up the file list without losing categorization work
+    // Find the file to get its name for the confirmation message
+    const fileToDelete = importedFiles.find(f => f.id === fileId);
+    if (!fileToDelete) return;
+
+    // Ask for confirmation
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar "${fileToDelete.name}" y sus ${fileToDelete.transactionCount} transacciones?\n\nEsta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    // Get the IDs of transactions from this file
+    const idsToDelete = fileToDelete.transactionIds || [];
+
+    // Delete transactions that match these IDs
+    if (idsToDelete.length > 0) {
+      setTransactions(prev => prev.filter(t => !idsToDelete.includes(t.id)));
+    }
+
+    // Remove the file from tracking
     setImportedFiles(prev => prev.filter(f => f.id !== fileId));
-    // Note: Transactions are intentionally NOT deleted
-    // They remain available with their categories for deduplication on future imports
   };
 
 
