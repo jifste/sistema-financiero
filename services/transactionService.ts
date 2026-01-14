@@ -80,7 +80,9 @@ export function parseChileanDate(dateStr: string): string {
     // Handle Excel serial date
     const serial = parseFloat(str);
     if (!isNaN(serial) && serial > 40000 && serial < 60000) {
-        const utcDays = Math.floor(serial - 25569);
+        // Excel serial date: days since Jan 1, 1900
+        // Use 25570 (not 25569) to correctly convert to Unix timestamp
+        const utcDays = Math.floor(serial - 25570);
         const date = new Date(utcDays * 86400 * 1000);
         return date.toISOString().split('T')[0];
     }
@@ -127,7 +129,7 @@ function parseDateToTimestamp(dateStr: string): number {
     // Handle Excel serial date
     const serial = parseFloat(str);
     if (!isNaN(serial) && serial > 40000 && serial < 60000) {
-        const utcDays = Math.floor(serial - 25569);
+        const utcDays = Math.floor(serial - 25570);
         return utcDays * 86400 * 1000;
     }
 

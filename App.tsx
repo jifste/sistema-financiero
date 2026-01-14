@@ -846,7 +846,7 @@ const App: React.FC = () => {
 
   // Convert Excel serial date to JS Date
   const excelDateToJSDate = (serial: number): string => {
-    const utcDays = Math.floor(serial - 25569);
+    const utcDays = Math.floor(serial - 25570);
     const date = new Date(utcDays * 86400 * 1000);
     return date.toISOString().split('T')[0];
   };
