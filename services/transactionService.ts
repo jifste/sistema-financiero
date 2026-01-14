@@ -70,19 +70,26 @@ export function generateTransactionHashSync(
 }
 
 /**
- * Parse Chilean date format (DD/MM/YYYY) to ISO date string
+ * Parse Chilean date format (DD/MM/YYYY) or Date object to ISO date string
  */
-export function parseChileanDate(dateStr: string): string {
-    if (!dateStr) return new Date().toISOString().split('T')[0];
+export function parseChileanDate(dateInput: string | Date | number): string {
+    if (!dateInput) return new Date().toISOString().split('T')[0];
 
-    const str = String(dateStr).trim();
+    // Handle Date objects (from XLSX cellDates: true)
+    if (dateInput instanceof Date) {
+        const y = dateInput.getFullYear();
+        const m = String(dateInput.getMonth() + 1).padStart(2, '0');
+        const d = String(dateInput.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
 
-    // Handle Excel serial date
+    const str = String(dateInput).trim();
+
+    // Handle Excel serial date (fallback if cellDates not used)
     const serial = parseFloat(str);
     if (!isNaN(serial) && serial > 40000 && serial < 60000) {
         // Excel serial date: days since Jan 1, 1900
-        // Use 25570 (not 25569) to correctly convert to Unix timestamp
-        const utcDays = Math.floor(serial - 25570);
+        const utcDays = Math.floor(serial - 25569);
         const date = new Date(utcDays * 86400 * 1000);
         return date.toISOString().split('T')[0];
     }

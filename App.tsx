@@ -860,12 +860,12 @@ const App: React.FC = () => {
   // Excel Import Handler - supports Chilean bank statements
   const handleExcelImport = async (file: File) => {
     const data = await file.arrayBuffer();
-    const workbook = XLSX.read(data);
+    const workbook = XLSX.read(data, { cellDates: true });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
 
-    // Get data with XLSX date conversion (raw: false makes XLSX format dates as DD/MM/YYYY strings)
-    const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
+    // Get raw data - keep raw: true (default) so numbers stay as numbers for amount parsing
+    const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
 
     // Find the header row (look for rows containing "Fecha", "Movimientos", "Cargos", etc)
     let headerRowIndex = -1;
