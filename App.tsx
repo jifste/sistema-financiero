@@ -846,13 +846,9 @@ const App: React.FC = () => {
 
   // Convert Excel serial date to JS Date
   const excelDateToJSDate = (serial: number): string => {
-    const EXCEL_EPOCH = Date.UTC(1899, 11, 30); // Dec 30, 1899
-    const MS_PER_DAY = 86400 * 1000;
-    const date = new Date(EXCEL_EPOCH + serial * MS_PER_DAY);
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(date.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    const utcDays = Math.floor(serial - 25569);
+    const date = new Date(utcDays * 86400 * 1000);
+    return date.toISOString().split('T')[0];
   };
 
   // Generate unique hash for transaction deduplication (wrapper for PDF import)
