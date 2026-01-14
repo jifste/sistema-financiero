@@ -81,12 +81,10 @@ export function parseChileanDate(dateStr: string): string {
     const serial = parseFloat(str);
     if (!isNaN(serial) && serial > 40000 && serial < 60000) {
         // Excel serial: days since Dec 30, 1899 (Excel's epoch)
-        // Excel has a bug where it thinks 1900 was a leap year (Feb 29, 1900 didn't exist)
-        // For dates after Feb 28, 1900 (serial > 59), we subtract 1 to compensate
+        // Using Dec 30, 1899 as epoch automatically handles Excel's leap year bug
         const EXCEL_EPOCH = Date.UTC(1899, 11, 30); // Dec 30, 1899
         const MS_PER_DAY = 86400 * 1000;
-        const adjustedSerial = serial > 59 ? serial - 1 : serial; // Leap year bug fix
-        const date = new Date(EXCEL_EPOCH + adjustedSerial * MS_PER_DAY);
+        const date = new Date(EXCEL_EPOCH + serial * MS_PER_DAY);
         const y = date.getUTCFullYear();
         const m = String(date.getUTCMonth() + 1).padStart(2, '0');
         const d = String(date.getUTCDate()).padStart(2, '0');
@@ -137,8 +135,7 @@ function parseDateToTimestamp(dateStr: string): number {
     if (!isNaN(serial) && serial > 40000 && serial < 60000) {
         const EXCEL_EPOCH = Date.UTC(1899, 11, 30); // Dec 30, 1899
         const MS_PER_DAY = 86400 * 1000;
-        const adjustedSerial = serial > 59 ? serial - 1 : serial; // Leap year bug fix
-        return EXCEL_EPOCH + adjustedSerial * MS_PER_DAY;
+        return EXCEL_EPOCH + serial * MS_PER_DAY;
     }
 
     // Handle DD-MM-YYYY or DD/MM/YYYY format (Chilean)

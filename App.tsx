@@ -844,13 +844,11 @@ const App: React.FC = () => {
     isInstallment: false
   });
 
-  // Convert Excel serial date to JS Date (with leap year bug fix)
+  // Convert Excel serial date to JS Date
   const excelDateToJSDate = (serial: number): string => {
     const EXCEL_EPOCH = Date.UTC(1899, 11, 30); // Dec 30, 1899
     const MS_PER_DAY = 86400 * 1000;
-    // Excel has leap year bug: Feb 29, 1900 didn't exist but Excel counts it
-    const adjustedSerial = serial > 59 ? serial - 1 : serial;
-    const date = new Date(EXCEL_EPOCH + adjustedSerial * MS_PER_DAY);
+    const date = new Date(EXCEL_EPOCH + serial * MS_PER_DAY);
     const y = date.getUTCFullYear();
     const m = String(date.getUTCMonth() + 1).padStart(2, '0');
     const d = String(date.getUTCDate()).padStart(2, '0');
