@@ -858,14 +858,16 @@ const App: React.FC = () => {
   };
 
   // Excel Import Handler - supports Chilean bank statements
+  // FIXED: Now handles Excel Serial Dates and rows without document numbers
   const handleExcelImport = async (file: File) => {
     const data = await file.arrayBuffer();
-    const workbook = XLSX.read(data, { cellDates: true });
+    const workbook = XLSX.read(data, { cellDates: false }); // Keep raw: false to get serial dates as numbers
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
 
-    // Get raw data - keep raw: true (default) so numbers stay as numbers for amount parsing
+    // Get raw data - keep raw: true so numbers stay as numbers for amount parsing
     const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
+
 
     // Find the header row (look for rows containing "Fecha", "Movimientos", "Cargos", etc)
     let headerRowIndex = -1;
@@ -895,13 +897,14 @@ const App: React.FC = () => {
     const descCol = findCol(['movimiento', 'descripcion', 'concepto', 'detalle']);
     const cargoCol = findCol(['cargo', 'debito', 'egreso', 'gasto']);
     const abonoCol = findCol(['abono', 'credito', 'ingreso', 'deposito']);
-    const saldoCol = findCol(['saldo', 'balance', 'disponible']);  // NEW: parse balance column
+    const saldoCol = findCol(['saldo', 'balance', 'disponible']);
+    const docCol = findCol(['documento', 'doc', 'nro', 'numero', 'comprobante']);
 
     // DEBUG LOGGING
     console.log('📁 Excel Import Debug:');
     console.log('  Headers found:', headers);
     console.log('  Header row index:', headerRowIndex);
-    console.log('  Column mapping:', { fechaCol, descCol, cargoCol, abonoCol, saldoCol });
+    console.log('  Column mapping:', { fechaCol, descCol, cargoCol, abonoCol, saldoCol, docCol });
     console.log('  Total data rows:', rawData.length - headerRowIndex - 1);
 
     // Log first 3 data rows for debugging
@@ -913,59 +916,166 @@ const App: React.FC = () => {
           desc: debugRow[descCol],
           cargo: debugRow[cargoCol],
           abono: debugRow[abonoCol],
-          saldo: debugRow[saldoCol]
+          saldo: debugRow[saldoCol],
+          doc: debugRow[docCol]
         });
       }
     }
 
     const importedTransactions: Transaction[] = [];
 
-    // Helper function to parse Chilean currency format
-    // Chilean format uses dots as thousand separators: $20.000 = 20000
+    // Statistics for import summary
+    const importStats = {
+      totalRows: 0,
+      skippedInvalidRow: 0,
+      skippedNoDescription: 0,
+      skippedZeroAmount: 0,
+      importedCargos: 0,
+      importedAbonos: 0,
+    };
+    const skippedRows: Array<{ row: number; reason: string; detail: string }> = [];
+
+    // Enhanced helper function to parse Chilean currency format
+    // Handles: $20.000, $ 20.000, 20.000, (20.000), -20.000, 20,000, 20'000
     const parseChileanAmount = (value: any): number => {
       if (value === null || value === undefined || value === '') return 0;
-      const strVal = String(value);
-      let cleaned = strVal.replace(/[$\s]/g, '');
-      if (cleaned.includes(',')) {
-        cleaned = cleaned.replace(/\./g, '').replace(',', '.');
-      } else {
-        cleaned = cleaned.replace(/\./g, '');
+
+      // If it's already a number, return it
+      if (typeof value === 'number') return Math.abs(value);
+
+      let strVal = String(value).trim();
+
+      // Handle parentheses as negative (accounting format): (20.000) -> 20000
+      const isNegative = strVal.startsWith('(') && strVal.endsWith(')');
+      if (isNegative) {
+        strVal = strVal.slice(1, -1);
       }
+
+      // Remove currency symbols, spaces, and handle different formats
+      let cleaned = strVal
+        .replace(/[$\s]/g, '')           // Remove $ and spaces
+        .replace(/^-/, '')               // Remove leading minus
+        .replace(/'/g, '');              // Remove apostrophe (20'000)
+
+      // Handle Chilean format (dot as thousand separator, comma as decimal)
+      // vs US format (comma as thousand separator, dot as decimal)
+      if (cleaned.includes(',')) {
+        // If comma is present, check position to determine format
+        const commaPos = cleaned.lastIndexOf(',');
+        const dotPos = cleaned.lastIndexOf('.');
+
+        if (dotPos > commaPos) {
+          // Format: 1.234,56 or 1,234.56 - comma is thousand sep, dot is decimal
+          cleaned = cleaned.replace(/,/g, '');
+        } else {
+          // Format: 1.234,56 - Chilean format (dot thousand, comma decimal)
+          cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+        }
+      } else {
+        // No comma, just remove dots (Chilean thousand separator)
+        // But preserve if it looks like a decimal (e.g., 1.50)
+        const parts = cleaned.split('.');
+        if (parts.length === 2 && parts[1].length <= 2) {
+          // Looks like decimal format, keep as is
+        } else {
+          // Dots are thousand separators
+          cleaned = cleaned.replace(/\./g, '');
+        }
+      }
+
       const parsed = parseFloat(cleaned);
       return isNaN(parsed) ? 0 : Math.abs(parsed);
+    };
+
+    // Helper function to convert Excel Serial Date to ISO string
+    // Excel epoch: January 1, 1900 (but with the 1900 leap year bug)
+    const excelSerialToISO = (serial: any): string => {
+      // If it's not a number, try to parse as date string
+      if (typeof serial !== 'number') {
+        const strVal = String(serial || '').trim();
+        // Try DD-MM-YYYY or DD/MM/YYYY format
+        const match = strVal.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
+        if (match) {
+          const day = match[1].padStart(2, '0');
+          const month = match[2].padStart(2, '0');
+          let year = match[3];
+          if (year.length === 2) {
+            year = parseInt(year) > 50 ? '19' + year : '20' + year;
+          }
+          return `${year}-${month}-${day}`;
+        }
+        // Try YYYY-MM-DD format
+        const isoMatch = strVal.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (isoMatch) {
+          return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+        }
+        return '';
+      }
+
+      // Handle Excel serial date number
+      // Excel epoch is December 30, 1899 (accounting for the leap year bug)
+      const EXCEL_EPOCH = new Date(Date.UTC(1899, 11, 30));
+      const adjustedSerial = serial >= 60 ? serial - 1 : serial; // Fix Excel's 1900 leap year bug
+      const milliseconds = adjustedSerial * 24 * 60 * 60 * 1000;
+      const date = new Date(EXCEL_EPOCH.getTime() + milliseconds);
+
+      // Return ISO format YYYY-MM-DD
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     };
 
     // Parse data rows (skip header)
     for (let i = headerRowIndex + 1; i < rawData.length; i++) {
       const row = rawData[i];
-      if (!row || !Array.isArray(row) || row.length < 3) continue;
+      importStats.totalRows++;
 
-      // Get date - use parseChileanDate from service
-      let dateStr = '';
-      if (fechaCol >= 0 && row[fechaCol] !== undefined) {
-        dateStr = parseChileanDate(String(row[fechaCol]));
+      // PERMISSIVE: Only skip completely empty rows
+      if (!row || !Array.isArray(row) || row.every(cell => cell === null || cell === undefined || cell === '')) {
+        importStats.skippedInvalidRow++;
+        skippedRows.push({ row: i, reason: 'FILA_INVALIDA', detail: 'Fila completamente vacía' });
+        continue;
       }
 
-      // Get description
-      const desc = descCol >= 0 ? String(row[descCol] || '').trim() : '';
-      if (!desc || desc.length < 2) continue;
+      // Get date - handle both serial numbers and strings using excelSerialToISO
+      let dateStr = '';
+      if (fechaCol >= 0 && row[fechaCol] !== undefined && row[fechaCol] !== null && row[fechaCol] !== '') {
+        dateStr = excelSerialToISO(row[fechaCol]);
+      }
+
+      // Get description - PERMISSIVE: allow empty/short descriptions
+      let desc = descCol >= 0 ? String(row[descCol] || '').trim() : '';
+
+      // If description is empty, try to build one from document number or use placeholder
+      if (!desc || desc.length < 2) {
+        const docNum = docCol >= 0 ? String(row[docCol] || '').trim() : '';
+        if (docNum && docNum.length > 0 && docNum !== '0') {
+          desc = `Transacción Doc: ${docNum}`;
+        } else {
+          desc = 'POS/Compra sin documento';
+        }
+      }
+
 
       // Get amount and determine if income (abono) or expense (cargo)
       let amount = 0;
       let isIncome = false;
+      const cargoRaw = cargoCol >= 0 ? row[cargoCol] : null;
+      const abonoRaw = abonoCol >= 0 ? row[abonoCol] : null;
 
       // Check cargo first (expense)
-      if (cargoCol >= 0 && row[cargoCol] && row[cargoCol] !== '') {
-        const cargoVal = parseChileanAmount(row[cargoCol]);
+      if (cargoCol >= 0 && cargoRaw !== null && cargoRaw !== undefined && cargoRaw !== '') {
+        const cargoVal = parseChileanAmount(cargoRaw);
         if (cargoVal > 0) {
           amount = cargoVal;
           isIncome = false;
         }
       }
 
-      // Check abono (income)
-      if (amount === 0 && abonoCol >= 0 && row[abonoCol] && row[abonoCol] !== '') {
-        const abonoVal = parseChileanAmount(row[abonoCol]);
+      // Check abono (income) - only if cargo is zero
+      if (amount === 0 && abonoCol >= 0 && abonoRaw !== null && abonoRaw !== undefined && abonoRaw !== '') {
+        const abonoVal = parseChileanAmount(abonoRaw);
         if (abonoVal > 0) {
           amount = abonoVal;
           isIncome = true;
@@ -981,25 +1091,66 @@ const App: React.FC = () => {
         }
       }
 
-      if (amount > 0) {
-        const txDate = dateStr || new Date().toISOString().split('T')[0];
-        // Use generateTransactionHashSync from service (includes balance)
-        const txHash = generateTransactionHashSync(txDate, desc, amount, balance);
-        const txId = `excel-${Date.now()}-${i}`;
-        importedTransactions.push({
-          id: txId,
-          hash: txHash,
-          description: desc,
-          amount: amount,
-          balance: balance,  // Store balance for future reference
-          date: txDate,
-          category: undefined,
-          subCategory: isIncome ? 'Ingreso' : 'Gasto',
-          isInstallment: false,
-          isIncome: isIncome
-        });
+      // Log skipped rows with zero amount (this is where transactions can get lost!)
+      if (amount === 0) {
+        importStats.skippedZeroAmount++;
+        skippedRows.push({ row: i, reason: 'MONTO_CERO', detail: `Cargo="${cargoRaw}" (${parseChileanAmount(cargoRaw)}), Abono="${abonoRaw}" (${parseChileanAmount(abonoRaw)})` });
+        continue;
+      }
+
+      // Success! Transaction will be imported
+      if (isIncome) {
+        importStats.importedAbonos++;
+      } else {
+        importStats.importedCargos++;
+      }
+
+      const txDate = dateStr || new Date().toISOString().split('T')[0];
+      // Use generateTransactionHashSync from service (includes balance)
+      const txHash = generateTransactionHashSync(txDate, desc, amount, balance);
+      const txId = `excel-${Date.now()}-${i}`;
+      importedTransactions.push({
+        id: txId,
+        hash: txHash,
+        description: desc,
+        amount: amount,
+        balance: balance,  // Store balance for future reference
+        date: txDate,
+        category: undefined,
+        subCategory: isIncome ? 'Ingreso' : 'Gasto',
+        isInstallment: false,
+        isIncome: isIncome
+      });
+    }
+
+    // LOG IMPORT SUMMARY
+    console.log('═══════════════════════════════════════════════════════════════');
+    console.log('📊 FINANCEAIPRO - RESUMEN DE IMPORTACIÓN');
+    console.log('═══════════════════════════════════════════════════════════════');
+    console.log(`  📁 Archivo: ${file.name}`);
+    console.log(`  📏 Total filas procesadas: ${importStats.totalRows}`);
+    console.log(`  ✅ Cargos importados:      ${importStats.importedCargos}`);
+    console.log(`  ✅ Abonos importados:      ${importStats.importedAbonos}`);
+    console.log(`  ❌ Filas inválidas:        ${importStats.skippedInvalidRow}`);
+    console.log(`  ❌ Sin descripción:        ${importStats.skippedNoDescription}`);
+    console.log(`  ❌ Monto cero:             ${importStats.skippedZeroAmount}`);
+
+    const totalImported = importStats.importedCargos + importStats.importedAbonos;
+    const captureRate = importStats.totalRows > 0 ? ((totalImported / importStats.totalRows) * 100).toFixed(1) : '0';
+    console.log(`  📈 Tasa de captura:        ${captureRate}% (${totalImported}/${importStats.totalRows})`);
+
+    // Log details of skipped rows (limit to first 10 to avoid console spam)
+    if (skippedRows.length > 0) {
+      console.log('');
+      console.log('⚠️  FILAS OMITIDAS (primeras 10):');
+      skippedRows.slice(0, 10).forEach(s => {
+        console.log(`    Fila ${s.row}: ${s.reason} - ${s.detail}`);
+      });
+      if (skippedRows.length > 10) {
+        console.log(`    ... y ${skippedRows.length - 10} más`);
       }
     }
+    console.log('═══════════════════════════════════════════════════════════════');
 
     // SORT CHRONOLOGICALLY before deduplication (newest first for UI)
     const sortedTransactions = sortTransactionsChronologically(importedTransactions, 'desc');
@@ -2915,7 +3066,6 @@ const App: React.FC = () => {
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
                   <div className="max-h-[600px] overflow-y-auto">
                     {filteredTransactions
-                      .filter(t => !t.isIncome) // Only show expenses
                       .map((t) => {
                         const currentCategory = EXPENSE_CATEGORIES.find(c => c.name === t.subCategory);
 
@@ -2924,8 +3074,15 @@ const App: React.FC = () => {
                             {/* Transaction Info */}
                             <div className="flex-1 min-w-0 mr-4">
                               <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${currentCategory ? currentCategory.color : 'bg-slate-200'}`}>
-                                  {currentCategory ? (
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${t.isIncome
+                                    ? 'bg-green-500'
+                                    : currentCategory
+                                      ? currentCategory.color
+                                      : 'bg-slate-200'
+                                  }`}>
+                                  {t.isIncome ? (
+                                    <ArrowDownCircle size={20} className="text-white" />
+                                  ) : currentCategory ? (
                                     <currentCategory.icon size={20} className="text-white" />
                                   ) : (
                                     <Tag size={20} className="text-slate-400" />
@@ -2936,7 +3093,9 @@ const App: React.FC = () => {
                                   <div className="flex items-center gap-2 text-xs text-slate-500">
                                     <span>{new Date(t.date).toLocaleDateString('es-CL')}</span>
                                     <span>•</span>
-                                    <span className="font-semibold text-slate-700">${t.amount.toLocaleString('es-CL')}</span>
+                                    <span className={`font-semibold ${t.isIncome ? 'text-green-600' : 'text-slate-700'}`}>
+                                      {t.isIncome ? '+' : ''}${t.amount.toLocaleString('es-CL')}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -2975,12 +3134,12 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-white rounded-2xl p-4 border border-slate-100">
                     <p className="text-xs text-slate-500 mb-1">Total Movimientos</p>
-                    <p className="text-xl font-bold text-slate-900">{transactions.filter(t => !t.isIncome).length}</p>
+                    <p className="text-xl font-bold text-slate-900">{transactions.length}</p>
                   </div>
                   <div className="bg-white rounded-2xl p-4 border border-slate-100">
                     <p className="text-xs text-slate-500 mb-1">Clasificados</p>
                     <p className="text-xl font-bold text-green-600">
-                      {transactions.filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory)).length}
+                      {transactions.filter(t => EXPENSE_CATEGORIES.some(c => c.name === t.subCategory) || t.isIncome).length}
                     </p>
                   </div>
                   <div className="bg-white rounded-2xl p-4 border border-slate-100">
@@ -2992,8 +3151,8 @@ const App: React.FC = () => {
                   <div className="bg-white rounded-2xl p-4 border border-slate-100">
                     <p className="text-xs text-slate-500 mb-1">Progreso</p>
                     <p className="text-xl font-bold text-indigo-600">
-                      {transactions.filter(t => !t.isIncome).length > 0
-                        ? Math.round((transactions.filter(t => !t.isIncome && EXPENSE_CATEGORIES.some(c => c.name === t.subCategory)).length / transactions.filter(t => !t.isIncome).length) * 100)
+                      {transactions.length > 0
+                        ? Math.round(((transactions.filter(t => EXPENSE_CATEGORIES.some(c => c.name === t.subCategory) || t.isIncome).length) / transactions.length) * 100)
                         : 0}%
                     </p>
                   </div>
