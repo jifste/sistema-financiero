@@ -184,8 +184,8 @@ interface SavingsProjectionEntry {
   restanteAhorro: number;
 }
 
-// DEV_MODE: Set to true to bypass auth for local development
-const DEV_MODE = true;
+// DEV_MODE: Automatically true in localhost (npm run dev), false in production (Vercel)
+const DEV_MODE = import.meta.env.DEV;
 const DEV_USER = { id: 'dev-local-user', email: 'dev@local.test' };
 
 const App: React.FC = () => {
