@@ -184,9 +184,16 @@ interface SavingsProjectionEntry {
   restanteAhorro: number;
 }
 
+// DEV_MODE: Set to true to bypass auth for local development
+const DEV_MODE = true;
+const DEV_USER = { id: 'dev-local-user', email: 'dev@local.test' };
+
 const App: React.FC = () => {
   // Auth hook for logout functionality
-  const { user, logout } = useAuth();
+  const authContext = useAuth();
+  // Use mock user in DEV_MODE
+  const user = DEV_MODE ? DEV_USER : authContext.user;
+  const logout = DEV_MODE ? () => console.log('DEV: logout disabled') : authContext.logout;
 
   // Helper to get user-specific storage key
   const getStorageKey = useCallback((key: string): string => {
@@ -3075,10 +3082,10 @@ const App: React.FC = () => {
                             <div className="flex-1 min-w-0 mr-4">
                               <div className="flex items-center gap-3">
                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${t.isIncome
-                                    ? 'bg-green-500'
-                                    : currentCategory
-                                      ? currentCategory.color
-                                      : 'bg-slate-200'
+                                  ? 'bg-green-500'
+                                  : currentCategory
+                                    ? currentCategory.color
+                                    : 'bg-slate-200'
                                   }`}>
                                   {t.isIncome ? (
                                     <ArrowDownCircle size={20} className="text-white" />

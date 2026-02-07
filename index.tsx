@@ -9,9 +9,17 @@ import LoginPage from './src/components/LoginPage';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 
+// DEV_MODE: Set to true to bypass auth for local development
+const DEV_MODE = true;
+
 // Wrapper component to handle auth state
 const AppWrapper: React.FC = () => {
   const { user, loading } = useAuth();
+
+  // DEV_MODE: Skip auth check entirely
+  if (DEV_MODE) {
+    return <App />;
+  }
 
   if (loading) {
     return (
