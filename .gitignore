@@ -5,10 +5,11 @@ node_modules/
 dist/
 build/
 
-# Environment variables
+# Environment variables (CRÍTICO - NUNCA SUBIR)
 .env
 .env.local
 .env.*.local
+.env.production
 
 # Logs
 *.log
@@ -28,3 +29,28 @@ Thumbs.db
 backend/node_modules/
 backend/dist/
 backend/.env
+
+# ========================================
+# 🔒 DATOS SENSIBLES - NUNCA TRACKEAR
+# ========================================
+
+# Archivos de banco/cartolas
+*.xls
+*.xlsx
+*.csv
+!*.example.csv
+
+# Datos parseados
+*_parsed.*
+
+# Scripts de debug temporales
+diagnose-*.cjs
+debug-*.cjs
+test-*.cjs
+
+# Base de datos local
+*.sqlite
+*.db
+
+# Proyecto Karin (repo separado)
+Software-Ley-Karin/
